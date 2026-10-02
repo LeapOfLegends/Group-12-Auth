@@ -50,6 +50,7 @@ describe('Auth API (e2e)', () => {
         firstName: 'John',
         lastName: 'Doe',
         ssn,
+        dateOfBirth: '1990-05-15',
         phoneNumber: '202-456-1111',
       })
       .expect(201);

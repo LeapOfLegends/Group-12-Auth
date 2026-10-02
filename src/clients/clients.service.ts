@@ -5,7 +5,7 @@ import { Client } from './entities/client.entity';
 
 export type NewClient = Pick<
   Client,
-  'email' | 'passwordHash' | 'firstName' | 'lastName' | 'ssn' | 'phoneNumber'
+  'email' | 'passwordHash' | 'firstName' | 'lastName' | 'ssn' | 'phoneNumber' | 'dateOfBirth'
 >;
 
 @Injectable()

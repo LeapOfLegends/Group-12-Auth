@@ -1,4 +1,5 @@
 import {
+  IsDateString,
   IsEmail,
   IsNotEmpty,
   IsPhoneNumber,
@@ -29,6 +30,10 @@ export class RegisterDto {
     message: 'SSN must use the format 123-45-6789.',
   })
   ssn: string;
+
+  @IsNotEmpty()
+  @IsDateString()
+  dateOfBirth: string;
 
   @IsNotEmpty()
   @IsPhoneNumber('US', { message: 'Phone number must be a valid US phone number.' })

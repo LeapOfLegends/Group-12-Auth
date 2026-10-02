@@ -27,6 +27,9 @@ export class Client {
   @Column({ name: 'phone_number', type: 'varchar', length: 12 })
   phoneNumber: string;
 
+  @Column({ name: 'date_of_birth', type: 'date' })
+  dateOfBirth: string;
+
   @Column({ name: 'account_balance', type: 'numeric', precision: 40, scale: 16, insert: false, update: false })
   accountBalance: string;
 

@@ -34,6 +34,7 @@ export class AuthService {
       lastName: dto.lastName,
       ssn: dto.ssn,
       phoneNumber: dto.phoneNumber,
+      dateOfBirth: dto.dateOfBirth,
     });
 
     return this.clientsService.toPublicClient(client);
