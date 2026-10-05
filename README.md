@@ -1,23 +1,91 @@
 # Group-12-Auth
 
-NestJS = Authentication + User Registration + JWT Issuance
-
-Spring Boot = JWT Validation + Authorization + Application APIs
+NestJS authentication service for the Group 12 capstone project.
 
 ## Overview
 
-This service handles user registration, validation, hashing, and JWT issuance for the Group 12 platform. It is designed to be used by a separate Spring Boot application that validates the JWTs on protected endpoints and enforces authorization there.
+This service handles client registration, password hashing, and JWT issuance for the platform. It is built with NestJS and TypeORM, and it persists client records in PostgreSQL. The service is focused on authentication and token generation; authorization and protected-resource validation are expected to be handled by downstream services.
 
-This NestJS service does not implement JWT guard logic on protected application routes. Its responsibility is limited to issuing signed JWTs for downstream authenticated requests.
+## Current architecture
 
-## Architecture
+The live codebase is organized as follows:
 
-The service is organized into:
+- `AppModule`
+  - loads environment variables from a project-level `.env`
+  - configures the TypeORM PostgreSQL connection
+  - imports `ClientsModule` and `AuthModule`
 
-- `AuthModule` for login, registration, and JWT issuance
-- `UsersModule` for persistence and user lookup
-- `User` entity for secure data storage and uniqueness constraints
-- JWT config driven from environment variables
+- `ClientsModule`
+  - manages the `Client` entity and repository access
+  - exposes a basic health endpoint at `GET /users/health`
+
+- `AuthModule`
+  - provides the registration and login flows
+  - configures `JwtModule` with `HS256` signing
+  - uses `JWT_SECRET` and `JWT_EXPIRATION` from environment variables
+
+- `Client` entity
+  - stores client profile information, including:
+    - `clientId`
+    - `firstName`
+    - `lastName`
+    - `email`
+    - `passwordHash`
+    - `ssn`
+    - `phoneNumber`
+    - `dateOfBirth`
+    - `accountBalance`
+    - `createdAt`
+
+## Project structure
+
+```text
+src/
+├── app.module.ts
+├── main.ts
+├── auth/
+│   ├── auth.controller.ts
+│   ├── auth.module.ts
+│   ├── auth.service.ts
+│   └── dto/
+│       ├── login.dto.ts
+│       └── register.dto.ts
+├── clients/
+│   ├── clients.controller.ts
+│   ├── clients.module.ts
+│   ├── clients.service.ts
+│   └── entities/
+│       └── client.entity.ts
+└── ...
+test/
+└── auth.e2e-spec.ts
+```
+
+## Prerequisites
+
+- Node.js 18+
+- npm
+- PostgreSQL instance running locally or in a container
+
+## Environment configuration
+
+Create a `.env` file in the project root and add the required variables for your local environment. The application reads this file globally via `ConfigModule.forRoot({ envFilePath: '.env' })`.
+
+Example structure:
+
+```env
+PORT=3000
+DATABASE_TYPE=postgres
+DATABASE_HOST=your_database_host
+DATABASE_PORT=5432
+DATABASE_USERNAME=your_database_user
+DATABASE_PASSWORD=your_database_password
+DATABASE_NAME=your_database_name
+JWT_EXPIRATION=3600s
+JWT_SECRET=your_secure_jwt_secret
+```
+
+Use your own secure values for the database connection and signing secret; do not commit real credentials to source control.
 
 ## Install dependencies
 
@@ -25,55 +93,28 @@ The service is organized into:
 npm install
 ```
 
-## Configure environment variables
+## Run the service
 
-Create a `.env` file from `.env.example` and fill in the values required by the app.
-
-```bash
-cp .env.example .env
-```
-
-Example:
-
-```env
-PORT=3000
-DATABASE_TYPE=sqlite
-DATABASE_NAME=./auth.db
-JWT_EXPIRATION=3600s
-JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----
-...
------END PRIVATE KEY-----"
-JWT_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----
-...
------END PUBLIC KEY-----"
-```
-
-Do not commit real private keys or credentials.
-
-## Generate RSA keys
-
-On a local machine, generate a keypair and place the private key in the local `.env` file. The public key is used by the Spring Boot app for JWT verification.
-
-```bash
-openssl genrsa -out private.pem 2048
-openssl rsa -in private.pem -pubout -out public.pem
-```
-
-Then paste the contents into the `JWT_PRIVATE_KEY` and `JWT_PUBLIC_KEY` variables in the `.env` file.
-
-## Start the NestJS service
+Development mode:
 
 ```bash
 npm run start:dev
 ```
 
-The app listens on the port specified by `PORT` (default `3000`).
+Production build:
 
-## Available endpoints
+```bash
+npm run build
+npm run start
+```
 
-### POST /auth/register
+The app listens on the port from `PORT` (default `3000`).
 
-Registers a new user.
+## API endpoints
+
+### `POST /auth/register`
+
+Creates a new client record after validating the payload and hashing the password.
 
 Request body:
 
@@ -85,13 +126,39 @@ Request body:
   "lastName": "Doe",
   "ssn": "123-45-6789",
   "dateOfBirth": "2000-01-15",
-  "phoneNumber": "555-123-4567"
+  "phoneNumber": "202-456-1111"
 }
 ```
 
-### POST /auth/login
+Validation rules:
+- `email` must be a valid email
+- `password` must be at least 12 characters and include uppercase, lowercase, number, and special character
+- `ssn` must match `123-45-6789`
+- `dateOfBirth` must be a valid ISO date string
+- `phoneNumber` must be a valid US phone number
 
-Authenticates a user and returns a JWT.
+Example success response:
+
+```json
+{
+  "clientId": "123",
+  "email": "user@example.com",
+  "firstName": "John",
+  "lastName": "Doe",
+  "phoneNumber": "202-456-1111",
+  "dateOfBirth": "2000-01-15",
+  "accountBalance": "0",
+  "createdAt": "2026-10-05T00:00:00.000Z"
+}
+```
+
+The response intentionally omits:
+- `passwordHash`
+- `ssn`
+
+### `POST /auth/login`
+
+Authenticates a client by email and password, then issues a JWT.
 
 Request body:
 
@@ -106,49 +173,49 @@ Example successful response:
 
 ```json
 {
-  "accessToken": "eyJhbGciOiJSUzI1NiIs..."
+  "accessToken": "eyJhbGciOiJIUzI1NiJ9..."
 }
 ```
 
 ## JWT behavior
 
-JWTs are signed with RS256 and contain only minimal claims:
+The service currently issues JWTs using the `HS256` algorithm.
 
-- `sub` — user ID
-- `email` — user email
-- `iat` — issued-at
-- `exp` — expiration
+Token payload includes:
 
-The JWT does not include:
+- `sub` — client ID
+- `email` — client email
 
-- SSN
-- password
-- password hash
-- date of birth
-- phone number
+The JWT is signed using `JWT_SECRET` and expires according to `JWT_EXPIRATION`.
 
-## Spring Boot validation
+Important: this implementation does not use RSA public/private keys or asymmetric JWT verification. It is a symmetric signing flow.
 
-The Spring Boot service should validate JWT signatures using the public key, confirm token expiration, and extract claims such as user ID and email before authorizing requests on protected endpoints.
+## Security notes
 
-The expected pattern is:
+- Passwords are hashed with `bcryptjs` before being stored.
+- Password hashes are never returned in API responses.
+- SSNs are unique and excluded from returned payloads.
+- The application does not expose a JWT validation or authorization guard in this service.
+- Authorization decisions should be enforced by the consuming application or downstream API layer.
 
-1. NestJS issues a JWT using the private key
-2. Spring Boot receives the JWT
-3. Spring Boot verifies the RS256 signature with the public key
-4. Spring Boot checks `exp`
-5. Spring Boot authorizes access based on the validated claims
+## Testing
 
-## Sensitive field protection
+```bash
+npm test
+```
 
-Sensitive information is protected as follows:
-
-- Passwords are hashed before persistence
-- Password hashes are never returned to clients
-- SSNs are unique, stored securely, and never returned in JWTs or normal API responses
-- SSNs are never logged
-- JWTs do not contain SSN or other unnecessary personal information
+The test suite includes an end-to-end auth flow covering:
+- client registration
+- login
+- JWT generation
+- validation of the signed token payload
 
 ## Notes
 
-This project is intentionally focused on authentication and token issuance. Authorization and JWT validation are expected to happen in the Spring Boot service instead of in NestJS.
+This project is a focused authentication microservice for the Group 12 platform. It handles:
+- registration
+- validation
+- password hashing
+- JWT issuance
+
+It does not currently implement application-level authorization checks or token validation logic beyond generating signed tokens.
