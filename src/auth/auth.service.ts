@@ -1,6 +1,5 @@
 import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import { ClientsService } from '../clients/clients.service';
 import { RegisterDto } from './dto/register.dto';
@@ -11,7 +10,6 @@ export class AuthService {
   constructor(
     private readonly clientsService: ClientsService,
     private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -54,13 +52,9 @@ export class AuthService {
     }
 
     const payload = { sub: client.clientId, email: client.email };
-    const expiresIn = this.configService.get<string>('JWT_EXPIRATION') || '3600s';
 
     return {
-      accessToken: await this.jwtService.signAsync(payload, {
-        algorithm: 'HS256',
-        expiresIn,
-      }),
+      accessToken: await this.jwtService.signAsync(payload),
     };
   }
 }

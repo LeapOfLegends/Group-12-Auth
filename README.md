@@ -21,8 +21,9 @@ The live codebase is organized as follows:
 
 - `AuthModule`
   - provides the registration and login flows
-  - configures `JwtModule` with `HS256` signing
-  - uses `JWT_SECRET` and `JWT_EXPIRATION` from environment variables
+  - configures `JwtModule` with `RS256` signing
+  - loads its RSA private key from `JWT_PRIVATE_KEY_PATH`
+  - uses `JWT_EXPIRATION` from the environment
 
 - `Client` entity
   - stores client profile information, including:
@@ -82,10 +83,18 @@ DATABASE_USERNAME=your_database_user
 DATABASE_PASSWORD=your_database_password
 DATABASE_NAME=your_database_name
 JWT_EXPIRATION=3600s
-JWT_SECRET=your_secure_jwt_secret
+JWT_PRIVATE_KEY_PATH=./secrets/jwt-private.pem
 ```
 
-Use your own secure values for the database connection and signing secret; do not commit real credentials to source control.
+Generate an RSA key pair for local development and keep the private key out of source control:
+
+```powershell
+New-Item -ItemType Directory -Force secrets
+openssl genpkey -algorithm RSA -out secrets/jwt-private.pem -pkeyopt rsa_keygen_bits:2048
+openssl pkey -in secrets/jwt-private.pem -pubout -out secrets/jwt-public.pem
+```
+
+The service reads and validates the private PEM at startup. Mount the private key as a secret in deployed environments and set `JWT_PRIVATE_KEY_PATH` to its mounted path. Distribute only the matching public key to downstream services that verify access tokens. Never commit private key material or real database credentials.
 
 ## Install dependencies
 
@@ -173,22 +182,22 @@ Example successful response:
 
 ```json
 {
-  "accessToken": "eyJhbGciOiJIUzI1NiJ9..."
+  "accessToken": "eyJhbGciOiJSUzI1NiJ9..."
 }
 ```
 
 ## JWT behavior
 
-The service currently issues JWTs using the `HS256` algorithm.
+The service issues JWTs using the `RS256` algorithm. It signs with the RSA private key at `JWT_PRIVATE_KEY_PATH`; downstream services should verify signatures with the matching public key and explicitly allow only `RS256`.
 
 Token payload includes:
 
 - `sub` — client ID
 - `email` — client email
 
-The JWT is signed using `JWT_SECRET` and expires according to `JWT_EXPIRATION`.
+Tokens expire according to `JWT_EXPIRATION`.
 
-Important: this implementation does not use RSA public/private keys or asymmetric JWT verification. It is a symmetric signing flow.
+This service issues tokens but does not validate incoming JWTs. Existing HS256 tokens are not compatible with RS256 verification. Coordinate deployment of the downstream public-key verifiers and this issuer as a single cutover; tokens issued before the cutover will need to be reacquired.
 
 ## Security notes
 
@@ -204,11 +213,11 @@ Important: this implementation does not use RSA public/private keys or asymmetri
 npm test
 ```
 
-The test suite includes an end-to-end auth flow covering:
+The test suite creates a temporary RSA key pair and includes an end-to-end auth flow covering:
 - client registration
 - login
-- JWT generation
-- validation of the signed token payload
+- RS256 JWT generation and public-key validation
+- rejection when the algorithm allowlist or public key is incorrect
 
 ## Notes
 
