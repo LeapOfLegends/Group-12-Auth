@@ -1,11 +1,12 @@
-import { IsEmail, IsNotEmpty, MinLength } from 'class-validator';
+import { IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 export class LoginDto {
-  @IsEmail()
-  @IsNotEmpty()
-  email: string;
+  @IsString()
+  @Matches(/^[a-zA-Z0-9._-]{3,50}$/)
+  username!: string;
 
-  @IsNotEmpty()
-  @MinLength(12)
-  password: string;
+  @IsString()
+  @MinLength(1)
+  @MaxLength(72)
+  password!: string;
 }

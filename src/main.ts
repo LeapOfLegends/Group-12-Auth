@@ -20,6 +20,7 @@ async function bootstrap() {
 
   const port = Number(process.env.PORT ?? 3000);
   await app.listen(port);
+  console.log(`Admin auth service running at http://localhost:${port}`);
 }
 
 bootstrap();
