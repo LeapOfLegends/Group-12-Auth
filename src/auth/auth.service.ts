@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import * as bcrypt from 'bcryptjs';
+import * as bcrypt from 'bcrypt';
 import { ClientsService } from '../clients/clients.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -40,7 +40,7 @@ export class AuthService {
     return this.clientsService.toPublicClient(client);
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: any) {
     const client = await this.clientsService.findByEmail(dto.email);
 
     if (!client) {
