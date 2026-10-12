@@ -53,7 +53,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const payload = { sub: client.clientId, email: client.email };
+    const payload = { sub: client.clientId, email: client.email, roles: ['CLIENT'] };
     const expiresIn = this.configService.get<string>('JWT_EXPIRATION') || '3600s';
 
     return {
