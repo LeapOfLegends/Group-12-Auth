@@ -1,0 +1,146 @@
+{
+  "info": {
+    "name": "Group-12 Auth (NestJS)",
+    "description": "Set baseUrl and the existing super admin's email/password in the collection variables, then run top to bottom. Registration creates real rows in PostgreSQL, so use unique test emails. Passwords need 12+ characters with upper, lower, number and special character. Tokens are saved to collection variables; clear passwords and tokens before sharing.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000", "type": "string" },
+    { "key": "superAdminEmail", "value": "", "type": "string" },
+    { "key": "superAdminPassword", "value": "", "type": "string" },
+    { "key": "superAdminToken", "value": "", "type": "string" },
+    { "key": "newAdminEmail", "value": "", "type": "string" },
+    { "key": "newAdminPassword", "value": "", "type": "string" },
+    { "key": "newAdminRole", "value": "operations", "type": "string" },
+    { "key": "newAdminToken", "value": "", "type": "string" },
+    { "key": "clientEmail", "value": "", "type": "string" },
+    { "key": "clientPassword", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "1. Admin login (super admin)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{superAdminEmail}}\",\n  \"password\": \"{{superAdminPassword}}\"\n}", "options": { "raw": { "language": "json" } } },
+        "description": "Any active admin can log in here. The super admin's token is saved for the register requests."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "const body = pm.response.json();",
+        "pm.test('Login returns 200', () => pm.response.to.have.status(200));",
+        "pm.test('JWT and role are returned', () => {",
+        "  pm.expect(body.accessToken).to.be.a('string');",
+        "  pm.expect(body.admin.role).to.eql('super_admin');",
+        "  pm.expect(body.admin).not.to.have.property('passwordHash');",
+        "});",
+        "if (pm.response.code === 200) pm.collectionVariables.set('superAdminToken', body.accessToken);"
+      ] } }]
+    },
+    {
+      "name": "2. Register admin (as super admin)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{superAdminToken}}", "type": "string" }] },
+        "url": "{{baseUrl}}/api/auth/register",
+        "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Postman\",\n  \"lastName\": \"Admin\",\n  \"email\": \"{{newAdminEmail}}\",\n  \"password\": \"{{newAdminPassword}}\",\n  \"role\": \"{{newAdminRole}}\"\n}", "options": { "raw": { "language": "json" } } },
+        "description": "Set newAdminRole to super_admin, operations or finance."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "const body = pm.response.json();",
+        "pm.test('Register returns 201', () => pm.response.to.have.status(201));",
+        "pm.test('Role stored and no password exposed', () => {",
+        "  pm.expect(body.role).to.eql(pm.collectionVariables.get('newAdminRole'));",
+        "  pm.expect(body).not.to.have.property('passwordHash');",
+        "});"
+      ] } }]
+    },
+    {
+      "name": "3. Admin login (new admin)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{newAdminEmail}}\",\n  \"password\": \"{{newAdminPassword}}\"\n}", "options": { "raw": { "language": "json" } } }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "const body = pm.response.json();",
+        "pm.test('Login returns 200', () => pm.response.to.have.status(200));",
+        "pm.test('Role matches', () => pm.expect(body.admin.role).to.eql(pm.collectionVariables.get('newAdminRole')));",
+        "if (pm.response.code === 200) pm.collectionVariables.set('newAdminToken', body.accessToken);"
+      ] } }]
+    },
+    {
+      "name": "4. Reject register without token",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "auth": { "type": "noauth" },
+        "url": "{{baseUrl}}/api/auth/register",
+        "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Postman\",\n  \"lastName\": \"Admin\",\n  \"email\": \"no-token@example.invalid\",\n  \"password\": \"NoTokenPassword123!\",\n  \"role\": \"finance\"\n}", "options": { "raw": { "language": "json" } } }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('Returns 401', () => pm.response.to.have.status(401));"
+      ] } }]
+    },
+    {
+      "name": "5. Reject register by non-super admin",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{newAdminToken}}", "type": "string" }] },
+        "url": "{{baseUrl}}/api/auth/register",
+        "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Postman\",\n  \"lastName\": \"Forbidden\",\n  \"email\": \"forbidden@example.invalid\",\n  \"password\": \"ForbiddenPassword123!\",\n  \"role\": \"finance\"\n}", "options": { "raw": { "language": "json" } } },
+        "description": "Run with newAdminRole set to operations or finance. Expects 403."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('Returns 403', () => pm.response.to.have.status(403));"
+      ] } }]
+    },
+    {
+      "name": "6. Reject admin login with wrong password",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{superAdminEmail}}\",\n  \"password\": \"WrongPassword123!\"\n}", "options": { "raw": { "language": "json" } } }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('Returns 401', () => pm.response.to.have.status(401));",
+        "pm.test('No token', () => pm.expect(pm.response.json()).not.to.have.property('accessToken'));"
+      ] } }]
+    },
+    {
+      "name": "7. Client register",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/auth/register",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{clientEmail}}\",\n  \"password\": \"{{clientPassword}}\",\n  \"firstName\": \"Postman\",\n  \"lastName\": \"Client\",\n  \"ssn\": \"123-45-6789\",\n  \"dateOfBirth\": \"1990-05-15\",\n  \"phoneNumber\": \"202-456-1111\"\n}", "options": { "raw": { "language": "json" } } },
+        "description": "Creates a real client row. Use a unique email and SSN."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('Returns 201', () => pm.response.to.have.status(201));",
+        "pm.test('No secrets exposed', () => {",
+        "  const body = pm.response.json();",
+        "  pm.expect(body).not.to.have.property('passwordHash');",
+        "  pm.expect(body).not.to.have.property('ssn');",
+        "});"
+      ] } }]
+    },
+    {
+      "name": "8. Client login",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/auth/login",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{clientEmail}}\",\n  \"password\": \"{{clientPassword}}\"\n}", "options": { "raw": { "language": "json" } } }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('Returns 201', () => pm.response.to.have.status(201));",
+        "pm.test('JWT returned', () => pm.expect(pm.response.json().accessToken).to.be.a('string'));"
+      ] } }]
+    }
+  ]
+}

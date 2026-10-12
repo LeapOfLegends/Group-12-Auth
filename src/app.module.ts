@@ -5,7 +5,7 @@ import { AuthModule } from './auth/auth.module';
 import { ClientsModule } from './clients/clients.module';
 import { Client } from './clients/entities/client.entity';
 import { AdminAuthModule } from './admin-auth/admin-auth.module';
-import { AdminEntity } from './admin-auth/entities/admin.entity';
+import { Admin } from './admins/entities/admin.entity';
 
 @Module({
   imports: [
@@ -22,7 +22,7 @@ import { AdminEntity } from './admin-auth/entities/admin.entity';
         username: configService.getOrThrow<string>('DB_USER'),
         password: configService.getOrThrow<string>('DB_PASSWORD'),
         database: configService.getOrThrow<string>('DB_NAME'),
-        entities: [Client, AdminEntity],
+        entities: [Client, Admin],
         synchronize: false,
       }),
     }),

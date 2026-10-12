@@ -2,17 +2,14 @@
   "name": "trading-admin-auth-nestjs",
   "version": "1.0.0",
   "private": true,
-  "description": "NestJS/PostgreSQL admin authentication compatible with unchanged Spring Boot mission-service JWT contract",
+  "description": "NestJS authentication for clients and admins (login, registration, JWT) backed by PostgreSQL",
   "scripts": {
     "start": "nest start",
     "start:dev": "nest start --watch",
     "build": "nest build",
     "start:prod": "node dist/main.js",
-    "db:migrate": "ts-node src/scripts/migrate.ts",
-    "seed:superadmin": "ts-node src/scripts/seed-superadmin.ts",
     "test": "jest --runInBand",
-    "test:watch": "jest --watch",
-    "test:e2e": "jest --config jest.e2e.config.cjs --runInBand"
+    "test:watch": "jest --watch"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.0",

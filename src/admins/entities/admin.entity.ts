@@ -1,8 +1,7 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
-import { AdminRole } from '../admin-role.enum';
 
 @Entity('admins')
-export class AdminEntity {
+export class Admin {
   @PrimaryGeneratedColumn({ type: 'bigint', name: 'admin_id' })
   adminId: string;
 
@@ -18,8 +17,9 @@ export class AdminEntity {
   @Column({ name: 'password_hash', type: 'varchar', length: 255 })
   passwordHash: string;
 
-  @Column({ type: 'text', default: 'finance' })
-  roles!: AdminRole;
+  // The database column is named "roles" but holds one role per admin.
+  @Column({ name: 'roles', type: 'text' })
+  role: string;
 
   @Column({ type: 'boolean', default: true })
   active: boolean;

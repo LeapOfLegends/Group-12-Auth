@@ -2,12 +2,12 @@ import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/co
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
-import { AdminsService } from './admins.service';
-import { LoginAdminDto } from './dto/login-admin.dto';
+import { AdminsService } from '../admins/admins.service';
 import { RegisterAdminDto } from './dto/register-admin.dto';
+import { LoginAdminDto } from './dto/login-admin.dto';
 
 @Injectable()
-export class AdminService {
+export class AdminAuthService {
   constructor(
     private readonly adminsService: AdminsService,
     private readonly jwtService: JwtService,
@@ -27,7 +27,7 @@ export class AdminService {
       passwordHash,
       firstName: dto.firstName,
       lastName: dto.lastName,
-      roles: dto.role,
+      role: dto.role,
     });
 
     return this.adminsService.toPublicAdmin(admin);
@@ -36,12 +36,8 @@ export class AdminService {
   async login(dto: LoginAdminDto) {
     const admin = await this.adminsService.findByEmail(dto.email);
 
-    if (!admin) {
+    if (!admin || !admin.active) {
       throw new UnauthorizedException('Invalid credentials');
-    }
-
-    if (!admin.active) {
-      throw new UnauthorizedException('Admin account is inactive');
     }
 
     const passwordMatches = await bcrypt.compare(dto.password, admin.passwordHash);
@@ -50,14 +46,16 @@ export class AdminService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const payload = { sub: admin.adminId, email: admin.email, roles: [admin.roles] };
-    const expiresIn = this.configService.get<string>('JWT_EXPIRATION') || '15m';
+    // Spring Boot reads "role" from this token to decide which data the admin may access.
+    const payload = { sub: admin.adminId, email: admin.email, role: admin.role };
+    const expiresIn = this.configService.get<string>('JWT_EXPIRATION') || '3600s';
 
     return {
       accessToken: await this.jwtService.signAsync(payload, {
         algorithm: 'HS256',
         expiresIn,
       }),
+      admin: this.adminsService.toPublicAdmin(admin),
     };
   }
 }
