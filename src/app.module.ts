@@ -4,7 +4,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { ClientsModule } from './clients/clients.module';
 import { Client } from './clients/entities/client.entity';
-import { AdminAuthModule } from './admin-auth/admin-auth.module';
 import { Admin } from './admins/entities/admin.entity';
 
 @Module({
@@ -26,7 +25,6 @@ import { Admin } from './admins/entities/admin.entity';
         synchronize: false,
       }),
     }),
-    AdminAuthModule,
     ClientsModule,
     AuthModule,
   ],

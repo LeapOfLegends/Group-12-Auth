@@ -3,11 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Client } from './entities/client.entity';
 
-export type NewClient = Pick<
-  Client,
-  'email' | 'passwordHash' | 'firstName' | 'lastName' | 'ssn' | 'phoneNumber' | 'dateOfBirth'
->;
-
+// Clients are created by the Spring Boot backend; this service only reads them for login.
 @Injectable()
 export class ClientsService {
   constructor(
@@ -17,16 +13,6 @@ export class ClientsService {
 
   findByEmail(email: string): Promise<Client | null> {
     return this.clientsRepository.findOne({ where: { email } });
-  }
-
-  findBySsn(ssn: string): Promise<Client | null> {
-    return this.clientsRepository.findOne({ where: { ssn } });
-  }
-
-  async createClient(data: NewClient): Promise<Client> {
-    const client = this.clientsRepository.create(data);
-    const savedClient = await this.clientsRepository.save(client);
-    return this.clientsRepository.findOneByOrFail({ clientId: savedClient.clientId });
   }
 
   toPublicClient(client: Client) {

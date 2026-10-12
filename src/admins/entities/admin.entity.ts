@@ -1,4 +1,5 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { AdminRole } from '../admin-role.enum';
 
 @Entity('admins')
 export class Admin {
@@ -19,14 +20,8 @@ export class Admin {
 
   // The database column is named "roles" but holds one role per admin.
   @Column({ name: 'roles', type: 'text' })
-  role: string;
-
-  @Column({ type: 'boolean', default: true })
-  active: boolean;
+  role: AdminRole;
 
   @Column({ name: 'created_at', type: 'timestamp', insert: false, update: false })
   createdAt: Date;
-
-  @Column({ type: 'timestamp', insert: false, update: false })
-  updated: Date;
 }

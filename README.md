@@ -1,24 +1,24 @@
 # Group-12-Auth
 
-NestJS authentication for the trading platform, backed by the shared PostgreSQL database. It handles client registration and login, admin login for every role, and admin registration by super admins. Login returns an HS256 JWT signed with `JWT_SECRET`. Spring Boot verifies that token with the same secret and reads the `role` claim to decide which data an admin may access.
+NestJS login service for the trading platform, backed by the shared PostgreSQL database. It does one thing: `POST /auth/login` checks an email and password against the `admins` or `clients` table and returns an HS256 JWT signed with `JWT_SECRET`. Accounts are created elsewhere. The Spring Boot backend (Group-12-Backend) registers admins, hashes their passwords and verifies this service's tokens with the same secret.
 
 Use Postman to call the endpoints. There is no Swagger setup in this repository.
 
-## Application structure
+## How login tells admins and clients apart
 
-The admin code mirrors the client code. `ClientsService` and `AdminsService` own database access to the `clients` and `admins` tables. `AuthService` and `AdminAuthService` do the bcrypt and JWT work on top of them. The only addition on the admin side is `SuperAdminGuard`, which protects admin registration.
+The email domain picks the table. Domains listed in `ADMIN_EMAIL_DOMAINS` (default `admin.com,fmr.com`) are looked up in `admins`; every other domain is looked up in `clients`. There is no fall-through: an unknown email or a wrong password gets HTTP 401 `Invalid credentials`, and a client row with an admin-domain email can never log in.
+
+Admin emails are matched trimmed and in lowercase because the backend stores them that way. Client emails are matched exactly as stored.
+
+## Application structure
 
 ```text
 src/
-  auth/                 client register + login      POST /auth/register, POST /auth/login
-  clients/              clients table access, GET /users/health
-  admin-auth/           admin register + login       POST /api/auth/register, POST /api/auth/login
-    super-admin.guard.ts
-    dto/
-  admins/               admins table access, AdminRole enum, Admin entity
+  auth/        POST /auth/login          AuthController, AuthService, LoginDto
+  admins/      admins table access       Admin entity, AdminRole enum, AdminsService
+  clients/     clients table access      Client entity, ClientsService, GET /users/health
 test/
   auth.e2e-spec.ts
-  admin-auth.e2e-spec.ts
 postman/
   Group-12-Auth.postman_collection.json
 ```
@@ -27,7 +27,7 @@ Roles are `super_admin`, `operations` and `finance`. They live in the `roles` co
 
 ## Configuration and startup
 
-Copy [.env.example](.env.example) to `.env` and fill in the existing database connection and the JWT secret shared with Spring Boot:
+Copy [.env.example](.env.example) to `.env` and fill in the database connection and the values shared with Spring Boot:
 
 ```dotenv
 PORT=3000
@@ -35,25 +35,24 @@ DB_HOST=localhost
 DB_PORT=15432
 DB_USER=your_database_user
 DB_PASSWORD=your_database_password
-DB_NAME=your_database_name
-JWT_SECRET=replace_with_a_long_random_signing_secret
+DB_NAME=capstone2026
+JWT_SECRET=replace_with_a_long_random_signing_secret_of_32_or_more_characters
 JWT_EXPIRATION=3600s
+ADMIN_EMAIL_DOMAINS=admin.com,fmr.com
 ```
 
-Then:
+`JWT_SECRET` and `ADMIN_EMAIL_DOMAINS` must be identical in Group-12-Backend. The secret must be at least 32 characters, or the backend rejects every token.
 
 ```bash
 npm install
 npm run start:dev
 ```
 
-The service uses the existing tables with TypeORM `synchronize: false`. It does not create or migrate tables, and it does not seed accounts. A super admin must already exist in the `admins` table with a bcrypt password hash.
+The service uses the existing tables with TypeORM `synchronize: false`. It does not create or migrate tables, and it does not seed accounts.
 
-## Admin endpoints
+## Login
 
-### Login (any role)
-
-`POST /api/auth/login`
+`POST /auth/login`
 
 ```json
 {
@@ -62,7 +61,7 @@ The service uses the existing tables with TypeORM `synchronize: false`. It does 
 }
 ```
 
-Returns HTTP 200:
+For an admin-domain email, HTTP 200 with the admin and a token that carries the role:
 
 ```json
 {
@@ -73,43 +72,42 @@ Returns HTTP 200:
     "lastName": "Admin",
     "email": "super@admin.com",
     "role": "super_admin",
-    "active": true,
-    "createdAt": "2026-10-01T00:00:00.000Z",
-    "updated": "2026-10-01T00:00:00.000Z"
+    "createdAt": "2026-10-01T00:00:00.000Z"
   }
 }
 ```
 
-The JWT payload is `{ "sub": "<adminId>", "email": "...", "role": "super_admin" | "operations" | "finance", "iat": ..., "exp": ... }`. Password hashes are never returned. Unknown emails, wrong passwords and inactive accounts all get HTTP 401 `Invalid credentials`.
+The JWT payload is `{ "sub": "<adminId>", "email": "...", "role": "super_admin" | "operations" | "finance", "iat": ..., "exp": ... }`. Spring Boot reads `role` to decide what the admin may do.
 
-### Register (super admins only)
-
-`POST /api/auth/register` with header `Authorization: Bearer <super admin accessToken>`
+For any other email, HTTP 200 with the client (no password hash, no SSN) and a token whose payload is `{ "sub": "<clientId>", "email": "...", "roles": ["CLIENT"], "iat": ..., "exp": ... }`:
 
 ```json
 {
-  "firstName": "Alex",
-  "lastName": "Admin",
-  "email": "alex@admin.com",
-  "password": "StrongPassword123!",
-  "role": "operations"
+  "accessToken": "<JWT>",
+  "client": {
+    "clientId": "12",
+    "firstName": "Jane",
+    "lastName": "Doe",
+    "email": "jane@example.com",
+    "phoneNumber": "202-456-1111",
+    "dateOfBirth": "1990-05-15",
+    "accountBalance": "0",
+    "createdAt": "2026-10-01T00:00:00.000Z"
+  }
 }
 ```
 
-`role` must be `super_admin`, `operations` or `finance`. Passwords need at least 12 characters with an uppercase letter, a lowercase letter, a number and a special character, the same rule as client registration. Returns HTTP 201 with the new admin in the same shape as the login response's `admin` object. The new admin can log in immediately.
-
 | Status | Meaning |
 | --- | --- |
-| 400 | Invalid body: bad email, weak password, unknown role, or unexpected fields |
-| 401 | Missing, invalid or expired Bearer token |
-| 403 | Token belongs to an operations or finance admin, a client, or a super admin that has since been deactivated |
-| 409 | An admin with this email already exists |
+| 400 | Invalid body: bad email, missing password, or unexpected fields |
+| 401 | Unknown email or wrong password |
 
-The guard verifies the token signature, requires `role` to be `super_admin`, and then re-reads the admin from the database so a deactivated or demoted super admin cannot keep using an old token.
+Password hashes are never returned.
 
-## Client endpoints
+## Creating accounts
 
-`POST /auth/register` creates a client (email, password, firstName, lastName, ssn, dateOfBirth, phoneNumber) and returns the client without the password hash or SSN. `POST /auth/login` returns `{ "accessToken": "<JWT>" }` with `sub` and `email` claims. `GET /users/health` returns `{ "status": "ok" }`.
+- **Admins**: `POST /admins` on Group-12-Backend with a super admin's `accessToken` as `Authorization: Bearer <token>`. The backend hashes the password with bcrypt, stores the email lowercase and rejects emails outside `ADMIN_EMAIL_DOMAINS`. The new admin can log in here right away. See the backend README for the request body and error codes.
+- **Clients**: created by Group-12-Backend. A client can only log in once its `password_hash` holds a bcrypt hash.
 
 ## Tests
 
@@ -117,16 +115,11 @@ The guard verifies the token signature, requires `role` to be `super_admin`, and
 npm test
 ```
 
-Both specs start a real Nest HTTP server with in-memory repositories, so they need no database. They cover login for all three roles, registration of all three roles by a super admin, rejection of operations, finance, client, missing and forged tokens, deactivated super admins, duplicate emails and validation.
+The spec starts a real Nest HTTP server with in-memory tables, so it needs no database. It covers login for all three roles and for clients, the role claim, domain routing, case-insensitive admin emails, both bcrypt prefixes, wrong passwords, unknown emails, body validation and the absence of registration routes.
 
 ## Manual testing with Postman
 
-**Start the service.** It listens on the `PORT` from `.env`, which is 3000 by default.
-
-```bash
-npm install
-npm run start:dev
-```
+**Start both services.** This one listens on the `PORT` from `.env` (3000 by default); the backend listens on 8081.
 
 **Know a super admin password.** Only admins whose `password_hash` is a bcrypt hash can log in. To set a password on an existing super admin, generate a hash:
 
@@ -140,40 +133,14 @@ Then store it with your SQL client:
 UPDATE admins SET password_hash = '<hash from the command>' WHERE email = 'super@admin.com';
 ```
 
-**Use the collection.** Import [Group-12-Auth.postman_collection.json](postman/Group-12-Auth.postman_collection.json), open its Variables tab, and fill in `superAdminEmail`, `superAdminPassword`, `newAdminEmail`, `newAdminPassword` and `newAdminRole`. Run the requests top to bottom. Request 1 saves the super admin token and request 2 sends it automatically.
-
-**Or send the requests yourself.** Every request uses the header `Content-Type: application/json`. Registration also needs `Authorization: Bearer <accessToken>` from the super admin login, which in Postman is the Authorization tab with type Bearer Token.
+**Use the collection.** Import [Group-12-Auth.postman_collection.json](postman/Group-12-Auth.postman_collection.json), open its Variables tab, and fill in `superAdminEmail`, `superAdminPassword`, `newAdminEmail` (admin domain), `newAdminPassword`, `newAdminRole`, `clientEmail` and `clientPassword`. Run the requests top to bottom. Request 1 saves the super admin token, request 2 registers an admin through the backend with it, and request 3 logs that admin in here.
 
 | Step | Request | Body |
 | --- | --- | --- |
-| Super admin login | `POST /api/auth/login` | `{ "email": "super@admin.com", "password": "YourPassword123!" }` |
-| Register an admin | `POST /api/auth/register` | `{ "firstName": "Alex", "lastName": "Admin", "email": "alex@admin.com", "password": "StrongPassword123!", "role": "operations" }` |
-| New admin login | `POST /api/auth/login` | `{ "email": "alex@admin.com", "password": "StrongPassword123!" }` |
-| Client register | `POST /auth/register` | `{ "email": "jane@example.com", "password": "ClientPassword123!", "firstName": "Jane", "lastName": "Doe", "ssn": "123-45-6789", "dateOfBirth": "1990-05-15", "phoneNumber": "202-456-1111" }` |
-| Client login | `POST /auth/login` | `{ "email": "jane@example.com", "password": "ClientPassword123!" }` |
-| Health | `GET /users/health` | none |
+| Super admin login | `POST {{baseUrl}}/auth/login` | `{ "email": "super@admin.com", "password": "YourPassword123!" }` |
+| Register an admin (backend) | `POST {{backendUrl}}/admins` + Bearer token | `{ "firstName": "Alex", "lastName": "Admin", "email": "alex@admin.com", "password": "StrongPassword123!", "role": "operations" }` |
+| New admin login | `POST {{baseUrl}}/auth/login` | `{ "email": "alex@admin.com", "password": "StrongPassword123!" }` |
+| Client login | `POST {{baseUrl}}/auth/login` | `{ "email": "jane@example.com", "password": "ClientPassword123!" }` |
+| Health | `GET {{baseUrl}}/users/health` | none |
 
-Expect 200 for admin logins, 201 for registrations and client login, 401 for a wrong password or a missing token, 403 when an operations or finance token is used to register, and 409 for an email that already exists.
-
-## Live endpoint check (October 12, 2026)
-
-Every endpoint was called against the built server and the live PostgreSQL database. Because existing passwords are unknown, the check inserted a temporary super admin with a random password, then deleted every row it created. Admin and client row counts were unchanged afterward and no existing account or table was modified.
-
-| Request | Result |
-| --- | --- |
-| GET /users/health | 200 |
-| POST /auth/register, then /auth/login as the new client | 201, then 201 with a JWT |
-| Client duplicate email or SSN, weak password | 409, 409, 400 |
-| Client wrong password or unknown email | 401 |
-| POST /api/auth/login as super admin (mixed-case email) | 200, JWT with `role: super_admin`, no password hash |
-| Admin wrong password, inactive account, seed account without bcrypt hash, bad body | 401, 401, 401, 400 |
-| Super admin registers super_admin, operations and finance admins | 201 each, bcrypt hashes stored |
-| Each new admin logs in | 200 with its own role |
-| Newly registered super admin registers an admin | 201 |
-| Operations or finance admin tries to register | 403 |
-| No token, garbage token, client token | 401, 401, 403 |
-| Super admin deactivated after logging in | 403 |
-| Duplicate email in different case, unknown role, weak password, extra field | 409, 400, 400, 400 |
-| GET /api/auth/admins | 404 (no such route) |
-
-Most seeded admin rows hold placeholder values instead of bcrypt hashes, so they cannot log in until their passwords are reset.
+Expect 200 for logins, 201 for the registration, 401 for a wrong password or a missing token, 403 when an operations or finance token is used to register, and 409 for an admin email that already exists.

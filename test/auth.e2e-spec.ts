@@ -5,53 +5,40 @@ import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { AddressInfo } from 'node:net';
 import * as bcrypt from 'bcrypt';
+import { AdminRole } from '../src/admins/admin-role.enum';
+import { Admin } from '../src/admins/entities/admin.entity';
 import { AuthModule } from '../src/auth/auth.module';
 import { Client } from '../src/clients/entities/client.entity';
 
-// Exercise HTTP, hashing and JWT signing without PostgreSQL or personal data.
-describe('Client auth API (e2e)', () => {
+// Exercises HTTP, bcrypt verification and JWT signing without PostgreSQL. Rows go straight into
+// in-memory tables because, as in production, this service never creates accounts itself.
+describe('Login API (e2e)', () => {
   let app: INestApplication;
   let baseUrl: string;
   let jwt: JwtService;
+  let passwordHash: string;
+  const PASSWORD = 'ExamplePassword123!';
+  const admins: Admin[] = [];
   const clients: Client[] = [];
-  const registration = {
-    email: 'client@example.com',
-    password: 'ExamplePassword123!',
-    firstName: 'John',
-    lastName: 'Doe',
-    ssn: '123-45-6789',
-    dateOfBirth: '1990-05-15',
-    phoneNumber: '202-456-1111',
-  };
-  const repository = {
-    create: (data: Partial<Client>) => Object.assign(new Client(), data),
-    save: async (client: Client) => {
-      const saved = Object.assign(client, {
-        clientId: String(clients.length + 1),
-        accountBalance: '0',
-        createdAt: new Date('2026-01-01T00:00:00Z'),
-      });
-      clients.push(saved);
-      return saved;
-    },
-    findOne: async ({ where }: { where: Partial<Client> }) =>
-      clients.find((client) => Object.entries(where).every(([key, value]) => client[key as keyof Client] === value)) ?? null,
-    findOneByOrFail: async ({ clientId }: { clientId: string }) => {
-      const client = clients.find((entry) => entry.clientId === clientId);
-      if (!client) throw new Error('Client fixture not found');
-      return client;
-    },
-  };
+
+  // findOne({ where }) is the only repository method the login path uses.
+  const table = <T>(rows: T[]) => ({
+    findOne: async ({ where }: { where: Partial<T> }) =>
+      rows.find((row) => Object.entries(where).every(([key, value]) => row[key as keyof T] === value)) ?? null,
+  });
 
   beforeAll(async () => {
     const fixture = await Test.createTestingModule({ imports: [AuthModule] })
       .overrideProvider(ConfigService)
       .useValue(new ConfigService({
-        JWT_SECRET: 'client-e2e-secret-with-at-least-32-characters',
+        JWT_SECRET: 'e2e-secret-with-at-least-32-characters-in-it',
         JWT_EXPIRATION: '15m',
+        ADMIN_EMAIL_DOMAINS: 'admin.com, FMR.com',
       }))
+      .overrideProvider(getRepositoryToken(Admin))
+      .useValue(table(admins))
       .overrideProvider(getRepositoryToken(Client))
-      .useValue(repository)
+      .useValue(table(clients))
       .compile();
 
     app = fixture.createNestApplication();
@@ -59,15 +46,49 @@ describe('Client auth API (e2e)', () => {
     await app.listen(0, '127.0.0.1');
     baseUrl = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
     jwt = fixture.get(JwtService);
+    passwordHash = await bcrypt.hash(PASSWORD, 12);
   });
 
   beforeEach(() => {
+    admins.length = 0;
     clients.length = 0;
   });
 
   afterAll(async () => {
     await app?.close();
   });
+
+  // Shaped like the rows Spring Boot writes: lowercase email, $2b$ bcrypt hash, one lowercase role.
+  function seedAdmin(overrides: Partial<Admin> = {}) {
+    const admin = Object.assign(new Admin(), {
+      adminId: String(admins.length + 1),
+      firstName: 'Seed',
+      lastName: 'Admin',
+      email: 'super@admin.com',
+      passwordHash,
+      role: AdminRole.SUPER_ADMIN,
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+    }, overrides);
+    admins.push(admin);
+    return admin;
+  }
+
+  function seedClient(overrides: Partial<Client> = {}) {
+    const client = Object.assign(new Client(), {
+      clientId: String(clients.length + 1),
+      firstName: 'Jane',
+      lastName: 'Doe',
+      email: 'jane@example.com',
+      passwordHash,
+      ssn: '123-45-6789',
+      phoneNumber: '202-456-1111',
+      dateOfBirth: '1990-05-15',
+      accountBalance: '0',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+    }, overrides);
+    clients.push(client);
+    return client;
+  }
 
   async function post(path: string, body: unknown) {
     const response = await fetch(`${baseUrl}${path}`, {
@@ -78,52 +99,86 @@ describe('Client auth API (e2e)', () => {
     return { status: response.status, body: await response.json() };
   }
 
-  it('registers a client, stores a bcrypt hash, and returns a verifiable login JWT', async () => {
-    const registered = await post('/auth/register', registration);
+  const login = (email: string, password = PASSWORD) => post('/auth/login', { email, password });
 
-    expect(registered.status).toBe(201);
-    expect(registered.body).toMatchObject({ clientId: '1', email: registration.email, accountBalance: '0' });
-    expect(registered.body).not.toHaveProperty('passwordHash');
-    expect(registered.body).not.toHaveProperty('ssn');
-    expect(bcrypt.getRounds(clients[0].passwordHash)).toBe(12);
-    expect(await bcrypt.compare(registration.password, clients[0].passwordHash)).toBe(true);
+  it.each([AdminRole.SUPER_ADMIN, AdminRole.OPERATIONS, AdminRole.FINANCE])(
+    'logs in a %s admin and returns a JWT carrying the role',
+    async (role) => {
+      seedAdmin({ role });
 
-    const login = await post('/auth/login', { email: registration.email, password: registration.password });
-    expect(login.status).toBe(201);
-    expect(await jwt.verifyAsync(login.body.accessToken, { algorithms: ['HS256'] }))
-      .toMatchObject({ sub: registered.body.clientId, email: registration.email });
+      const result = await login('super@admin.com');
+
+      expect(result.status).toBe(200);
+      expect(result.body.admin).toMatchObject({ adminId: '1', email: 'super@admin.com', role });
+      expect(result.body.admin).not.toHaveProperty('passwordHash');
+      expect(result.body).not.toHaveProperty('client');
+      expect(await jwt.verifyAsync(result.body.accessToken, { algorithms: ['HS256'] }))
+        .toMatchObject({ sub: '1', email: 'super@admin.com', role });
+    },
+  );
+
+  it('logs in a client and returns a JWT carrying the CLIENT role', async () => {
+    seedClient();
+
+    const result = await login('jane@example.com');
+
+    expect(result.status).toBe(200);
+    expect(result.body.client).toMatchObject({ clientId: '1', email: 'jane@example.com', firstName: 'Jane' });
+    expect(result.body.client).not.toHaveProperty('passwordHash');
+    expect(result.body.client).not.toHaveProperty('ssn');
+    expect(result.body).not.toHaveProperty('admin');
+    const payload = await jwt.verifyAsync(result.body.accessToken, { algorithms: ['HS256'] });
+    expect(payload).toMatchObject({ sub: '1', email: 'jane@example.com', roles: ['CLIENT'] });
+    expect(payload).not.toHaveProperty('role');
   });
 
-  it('rejects duplicate client email and SSN with conflict responses', async () => {
-    expect((await post('/auth/register', registration)).status).toBe(201);
+  it('matches admin emails case-insensitively on every configured domain', async () => {
+    seedAdmin({ email: 'ops@fmr.com', role: AdminRole.OPERATIONS });
 
-    const emailConflict = await post('/auth/register', { ...registration, ssn: '234-56-7890' });
-    const ssnConflict = await post('/auth/register', { ...registration, email: 'another@example.com' });
+    const result = await login('  Ops@FMR.com ');
 
-    expect(emailConflict.status).toBe(409);
-    expect(ssnConflict.status).toBe(409);
-    expect(clients).toHaveLength(1);
+    expect(result.status).toBe(200);
+    expect(result.body.admin.role).toBe('operations');
   });
 
-  it('rejects unknown accounts and incorrect passwords without issuing tokens', async () => {
-    expect((await post('/auth/register', registration)).status).toBe(201);
+  it('accepts the $2a$ bcrypt prefix Spring Boot uses by default as well as $2b$', async () => {
+    seedAdmin({ passwordHash: passwordHash.replace('$2b$', '$2a$') });
 
-    const wrongPassword = await post('/auth/login', { email: registration.email, password: 'WrongPassword123!' });
-    const unknownEmail = await post('/auth/login', { email: 'unknown@example.com', password: registration.password });
+    expect((await login('super@admin.com')).status).toBe(200);
+  });
 
-    for (const result of [wrongPassword, unknownEmail]) {
+  it('never checks the clients table for an admin-domain email', async () => {
+    seedClient({ email: 'someone@admin.com' });
+
+    expect((await login('someone@admin.com')).status).toBe(401);
+  });
+
+  it('rejects wrong passwords and unknown emails without issuing tokens', async () => {
+    seedAdmin();
+    seedClient();
+
+    const results = [
+      await login('super@admin.com', 'WrongPassword123!'),
+      await login('jane@example.com', 'WrongPassword123!'),
+      await login('unknown@admin.com'),
+      await login('unknown@example.com'),
+    ];
+
+    for (const result of results) {
       expect(result.status).toBe(401);
       expect(result.body.message).toBe('Invalid credentials');
       expect(result.body).not.toHaveProperty('accessToken');
     }
   });
 
-  it('rejects invalid registration and unexpected fields before persisting', async () => {
-    const weakPassword = await post('/auth/register', { ...registration, password: 'weak' });
-    const extraField = await post('/auth/register', { ...registration, roles: ['super_admin'] });
+  it('validates the body and exposes no registration routes', async () => {
+    seedAdmin();
 
-    expect(weakPassword.status).toBe(400);
-    expect(extraField.status).toBe(400);
-    expect(clients).toHaveLength(0);
+    expect((await post('/auth/login', { email: 'not-an-email', password: PASSWORD })).status).toBe(400);
+    expect((await post('/auth/login', { email: 'super@admin.com', password: PASSWORD, role: 'super_admin' })).status).toBe(400);
+
+    for (const path of ['/auth/register', '/api/auth/register', '/api/auth/login']) {
+      expect((await post(path, { email: 'super@admin.com', password: PASSWORD })).status).toBe(404);
+    }
   });
 });

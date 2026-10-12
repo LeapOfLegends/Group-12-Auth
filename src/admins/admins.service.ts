@@ -3,8 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Admin } from './entities/admin.entity';
 
-export type NewAdmin = Pick<Admin, 'email' | 'passwordHash' | 'firstName' | 'lastName' | 'role'>;
-
+// Admins are created by the Spring Boot backend; this service only reads them for login.
 @Injectable()
 export class AdminsService {
   constructor(
@@ -14,16 +13,6 @@ export class AdminsService {
 
   findByEmail(email: string): Promise<Admin | null> {
     return this.adminsRepository.findOne({ where: { email } });
-  }
-
-  findById(adminId: string): Promise<Admin | null> {
-    return this.adminsRepository.findOne({ where: { adminId } });
-  }
-
-  async createAdmin(data: NewAdmin): Promise<Admin> {
-    const admin = this.adminsRepository.create(data);
-    const savedAdmin = await this.adminsRepository.save(admin);
-    return this.adminsRepository.findOneByOrFail({ adminId: savedAdmin.adminId });
   }
 
   toPublicAdmin(admin: Admin) {
