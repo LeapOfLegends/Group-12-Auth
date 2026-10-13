@@ -1,6 +1,6 @@
 # Group-12-Auth
 
-NestJS login service for the trading platform, backed by the shared PostgreSQL database. It does one thing: `POST /auth/login` checks an email and password against the `admins` or `clients` table and returns an HS256 JWT signed with `JWT_SECRET`. Accounts are created elsewhere. The Spring Boot backend (Group-12-Backend) registers admins, hashes their passwords and verifies this service's tokens with the same secret.
+NestJS authentication service for the trading platform, backed by the shared PostgreSQL database. `POST /auth/register` creates client accounts. `POST /auth/login` checks an email and password against the `admins` or `clients` table and returns an HS256 JWT signed with `JWT_SECRET`. The Spring Boot backend (Group-12-Backend) registers admins, hashes their passwords and verifies this service's tokens with the same secret.
 
 Use Postman to call the endpoints. There is no Swagger setup in this repository.
 
@@ -14,7 +14,7 @@ Admin emails are matched trimmed and in lowercase because the backend stores the
 
 ```text
 src/
-  auth/        POST /auth/login          AuthController, AuthService, LoginDto
+  auth/        POST /auth/login, /auth/register   AuthController, AuthService, LoginDto, RegisterDto
   admins/      admins table access       Admin entity, AdminRole enum, AdminsService
   clients/     clients table access      Client entity, ClientsService, GET /users/health
 test/
@@ -49,6 +49,35 @@ npm run start:dev
 ```
 
 The service uses the existing tables with TypeORM `synchronize: false`. It does not create or migrate tables, and it does not seed accounts.
+
+## Client registration
+
+`POST /auth/register`
+
+```json
+{
+  "firstName": "Jane",
+  "lastName": "Doe",
+  "email": "jane@example.com",
+  "password": "ClientPassword123!",
+  "ssn": "123-45-6789",
+  "phoneNumber": "202-456-1111",
+  "dateOfBirth": "1990-05-15"
+}
+```
+
+Registration trims surrounding whitespace from the email. Emails on a domain listed in `ADMIN_EMAIL_DOMAINS` (`admin.com` and `fmr.com` by default) are rejected in any letter case, because login would look them up in the `admins` table. Admin accounts are created on Group-12-Backend.
+
+Passwords must contain 12 to 72 characters, including an uppercase letter, a lowercase letter, a number and a special character. First and last names must be nonempty strings of at most 100 characters. SSNs must use `123-45-6789` format, phone numbers must be valid US numbers of at most 12 characters (for example, `202-456-1111` or `+12024561111`), and dates of birth must be ISO 8601 dates.
+
+HTTP 201 returns the created client directly, with the same public fields as the client shown in the login response below. Password hashes and SSNs are excluded. Registration does not return a token; use `POST /auth/login` afterward.
+
+| Status | Meaning |
+| --- | --- |
+| 400 | Invalid body or an email using a reserved admin domain |
+| 409 | Email or SSN already registered |
+
+A rejected admin-domain email gets HTTP 400 with a message that names the domain, for example `Client registration does not accept emails ending in @admin.com; this domain is reserved for admins.`
 
 ## Login
 
@@ -107,7 +136,7 @@ Password hashes are never returned.
 ## Creating accounts
 
 - **Admins**: `POST /admins` on Group-12-Backend with a super admin's `accessToken` as `Authorization: Bearer <token>`. The backend hashes the password with bcrypt, stores the email lowercase and rejects emails outside `ADMIN_EMAIL_DOMAINS`. The new admin can log in here right away. See the backend README for the request body and error codes.
-- **Clients**: created by Group-12-Backend. A client can only log in once its `password_hash` holds a bcrypt hash.
+- **Clients**: `POST /auth/register` on this service. The password is hashed with bcrypt before the client is saved. Reserved admin domains are rejected.
 
 ## Tests
 
@@ -115,7 +144,7 @@ Password hashes are never returned.
 npm test
 ```
 
-The spec starts a real Nest HTTP server with in-memory tables, so it needs no database. It covers login for all three roles and for clients, the role claim, domain routing, case-insensitive admin emails, both bcrypt prefixes, wrong passwords, unknown emails, body validation and the absence of registration routes.
+The spec starts a real Nest HTTP server with in-memory tables, so it needs no database. It covers login for all three roles and for clients, the role claim, domain routing, case-insensitive admin emails, both bcrypt prefixes, wrong passwords, unknown emails, body validation and client registration. Admin registration routes remain unavailable on this service.
 
 ## Manual testing with Postman
 
@@ -133,14 +162,15 @@ Then store it with your SQL client:
 UPDATE admins SET password_hash = '<hash from the command>' WHERE email = 'super@admin.com';
 ```
 
-**Use the collection.** Import [Group-12-Auth.postman_collection.json](postman/Group-12-Auth.postman_collection.json), open its Variables tab, and fill in `superAdminEmail`, `superAdminPassword`, `newAdminEmail` (admin domain), `newAdminPassword`, `newAdminRole`, `clientEmail` and `clientPassword`. Run the requests top to bottom. Request 1 saves the super admin token, request 2 registers an admin through the backend with it, and request 3 logs that admin in here.
+**Use the collection.** Import [Group-12-Auth.postman_collection.json](postman/Group-12-Auth.postman_collection.json), open its Variables tab, and fill in `superAdminEmail`, `superAdminPassword`, `newAdminEmail` (admin domain), `newAdminPassword`, `newAdminRole`, `clientEmail` and `clientPassword`. Run the requests top to bottom. Request 1 saves the super admin token, request 2 registers an admin through the backend with it, and request 3 logs that admin in here. Request 7 registers a client here and request 8 logs it in, so `clientEmail` must be new and outside the admin domains, and the SSN in request 7's body must not be registered yet.
 
 | Step | Request | Body |
 | --- | --- | --- |
 | Super admin login | `POST {{baseUrl}}/auth/login` | `{ "email": "super@admin.com", "password": "YourPassword123!" }` |
 | Register an admin (backend) | `POST {{backendUrl}}/admins` + Bearer token | `{ "firstName": "Alex", "lastName": "Admin", "email": "alex@admin.com", "password": "StrongPassword123!", "role": "operations" }` |
 | New admin login | `POST {{baseUrl}}/auth/login` | `{ "email": "alex@admin.com", "password": "StrongPassword123!" }` |
+| Register a client | `POST {{baseUrl}}/auth/register` | Use the client registration body above |
 | Client login | `POST {{baseUrl}}/auth/login` | `{ "email": "jane@example.com", "password": "ClientPassword123!" }` |
 | Health | `GET {{baseUrl}}/users/health` | none |
 
-Expect 200 for logins, 201 for the registration, 401 for a wrong password or a missing token, 403 when an operations or finance token is used to register, and 409 for an admin email that already exists.
+Expect 200 for logins and 201 for registrations. Client registration returns 400 for reserved admin domains or an invalid body, and 409 for a duplicate email or SSN. Admin registration on the backend returns 401 for a missing token, 403 when an operations or finance token is used, and 409 for an admin email that already exists. Login returns 401 for a wrong password.

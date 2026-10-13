@@ -1,12 +1,13 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { AdminsService } from '../admins/admins.service';
 import { ClientsService } from '../clients/clients.service';
+import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 
-// Accounts are created by the Spring Boot backend; this service only checks passwords and issues tokens.
+// Clients register here; admin accounts are created by the Spring Boot backend.
 @Injectable()
 export class AuthService {
   private readonly adminEmailDomains: string[];
@@ -21,6 +22,40 @@ export class AuthService {
       .split(',')
       .map((domain) => domain.trim().toLowerCase())
       .filter(Boolean);
+  }
+
+  async register(dto: RegisterDto) {
+    // Login looks up admin-domain emails in the admins table, so a client could never sign in with one.
+    const domain = this.emailDomain(dto.email);
+    if (this.adminEmailDomains.includes(domain)) {
+      throw new BadRequestException(
+        `Client registration does not accept emails ending in @${domain}; this domain is reserved for admins.`,
+      );
+    }
+
+    const existingEmail = await this.clientsService.findByEmail(dto.email);
+    if (existingEmail) {
+      throw new ConflictException('Client with this email already exists');
+    }
+
+    const existingSsn = await this.clientsService.findBySsn(dto.ssn);
+    if (existingSsn) {
+      throw new ConflictException('Client with this SSN already exists');
+    }
+
+    const passwordHash = await bcrypt.hash(dto.password, 12);
+
+    const client = await this.clientsService.createClient({
+      email: dto.email,
+      passwordHash,
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+      ssn: dto.ssn,
+      phoneNumber: dto.phoneNumber,
+      dateOfBirth: dto.dateOfBirth,
+    });
+
+    return this.clientsService.toPublicClient(client);
   }
 
   // One endpoint for everyone: the email domain decides which table is checked, with no fall-through.
@@ -57,8 +92,12 @@ export class AuthService {
   }
 
   private isAdminEmail(email: string) {
-    const domain = email.toLowerCase().split('@')[1] ?? '';
-    return this.adminEmailDomains.includes(domain);
+    return this.adminEmailDomains.includes(this.emailDomain(email));
+  }
+
+  // The domain follows the last "@"; a quoted local part such as "a@b"@example.com can contain another.
+  private emailDomain(email: string) {
+    return email.toLowerCase().split('@').pop() ?? '';
   }
 
   private sign(payload: Record<string, unknown>) {

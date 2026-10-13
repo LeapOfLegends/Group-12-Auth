@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Group-12 Auth (NestJS)",
-    "description": "Set baseUrl (this service), backendUrl (Group-12-Backend) and the existing super admin's email/password in the collection variables, then run top to bottom. Request 2 creates a real admin row through the backend, so use a unique admin-domain email. Passwords need 12+ characters with upper, lower, number and special character. Tokens are saved to collection variables; clear passwords and tokens before sharing.",
+    "description": "Set baseUrl (this service), backendUrl (Group-12-Backend) and the existing super admin's email/password in the collection variables, then run top to bottom. Request 2 creates a real admin row through the backend, so use a unique admin-domain email. Request 7 creates a real client row, so use a unique client email and SSN. Passwords need 12+ characters with upper, lower, number and special character. Tokens are saved to collection variables; clear passwords and tokens before sharing.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -114,13 +114,31 @@
       ] } }]
     },
     {
-      "name": "7. Login (client)",
+      "name": "7. Register client",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/auth/register",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{clientEmail}}\",\n  \"password\": \"{{clientPassword}}\",\n  \"firstName\": \"Postman\",\n  \"lastName\": \"Client\",\n  \"ssn\": \"123-45-6789\",\n  \"dateOfBirth\": \"1990-05-15\",\n  \"phoneNumber\": \"202-456-1111\"\n}", "options": { "raw": { "language": "json" } } },
+        "description": "Creates a real client row. Use a unique email outside ADMIN_EMAIL_DOMAINS and a unique SSN."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('Returns 201', () => pm.response.to.have.status(201));",
+        "pm.test('No secrets exposed', () => {",
+        "  const body = pm.response.json();",
+        "  pm.expect(body).not.to.have.property('passwordHash');",
+        "  pm.expect(body).not.to.have.property('ssn');",
+        "});"
+      ] } }]
+    },
+    {
+      "name": "8. Login (client)",
       "request": {
         "method": "POST",
         "header": [{ "key": "Content-Type", "value": "application/json" }],
         "url": "{{baseUrl}}/auth/login",
         "body": { "mode": "raw", "raw": "{\n  \"email\": \"{{clientEmail}}\",\n  \"password\": \"{{clientPassword}}\"\n}", "options": { "raw": { "language": "json" } } },
-        "description": "Any email outside ADMIN_EMAIL_DOMAINS is checked against the clients table. The client row must already exist with a bcrypt password hash."
+        "description": "Any email outside ADMIN_EMAIL_DOMAINS is checked against the clients table. Logs in the client that request 7 registered."
       },
       "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
         "const body = pm.response.json();",
