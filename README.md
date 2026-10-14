@@ -1,221 +1,176 @@
 # Group-12-Auth
 
-NestJS authentication service for the Group 12 capstone project.
+NestJS authentication service for the trading platform, backed by the shared PostgreSQL database. `POST /auth/register` creates client accounts. `POST /auth/login` checks an email and password against the `admins` or `clients` table and returns an HS256 JWT signed with `JWT_SECRET`. The Spring Boot backend (Group-12-Backend) registers admins, hashes their passwords and verifies this service's tokens with the same secret.
 
-## Overview
+Use Postman to call the endpoints. There is no Swagger setup in this repository.
 
-This service handles client registration, password hashing, and JWT issuance for the platform. It is built with NestJS and TypeORM, and it persists client records in PostgreSQL. The service is focused on authentication and token generation; authorization and protected-resource validation are expected to be handled by downstream services.
+## How login tells admins and clients apart
 
-## Current architecture
+The email domain picks the table. Domains listed in `ADMIN_EMAIL_DOMAINS` (default `admin.com,fmr.com`) are looked up in `admins`; every other domain is looked up in `clients`. There is no fall-through: an unknown email or a wrong password gets HTTP 401 `Invalid credentials`, and a client row with an admin-domain email can never log in.
 
-The live codebase is organized as follows:
+Admin emails are matched trimmed and in lowercase because the backend stores them that way. Client emails are matched exactly as stored.
 
-- `AppModule`
-  - loads environment variables from a project-level `.env`
-  - configures the TypeORM PostgreSQL connection
-  - imports `ClientsModule` and `AuthModule`
-
-- `ClientsModule`
-  - manages the `Client` entity and repository access
-  - exposes a basic health endpoint at `GET /users/health`
-
-- `AuthModule`
-  - provides the registration and login flows
-  - configures `JwtModule` with `HS256` signing
-  - uses `JWT_SECRET` and `JWT_EXPIRATION` from environment variables
-
-- `Client` entity
-  - stores client profile information, including:
-    - `clientId`
-    - `firstName`
-    - `lastName`
-    - `email`
-    - `passwordHash`
-    - `ssn`
-    - `phoneNumber`
-    - `dateOfBirth`
-    - `accountBalance`
-    - `createdAt`
-
-## Project structure
+## Application structure
 
 ```text
 src/
-├── app.module.ts
-├── main.ts
-├── auth/
-│   ├── auth.controller.ts
-│   ├── auth.module.ts
-│   ├── auth.service.ts
-│   └── dto/
-│       ├── login.dto.ts
-│       └── register.dto.ts
-├── clients/
-│   ├── clients.controller.ts
-│   ├── clients.module.ts
-│   ├── clients.service.ts
-│   └── entities/
-│       └── client.entity.ts
-└── ...
+  auth/        POST /auth/login, /auth/register   AuthController, AuthService, LoginDto, RegisterDto
+  admins/      admins table access       Admin entity, AdminRole enum, AdminsService
+  clients/     clients table access      Client entity, ClientsService, GET /users/health
 test/
-└── auth.e2e-spec.ts
+  auth.e2e-spec.ts
+postman/
+  Group-12-Auth.postman_collection.json
 ```
 
-## Prerequisites
+Roles are `super_admin`, `operations` and `finance`. They live in the `roles` column of the `admins` table, one role per admin.
 
-- Node.js 18+
-- npm
-- PostgreSQL instance running locally or in a container
+## Configuration and startup
 
-## Environment configuration
+Copy [.env.example](.env.example) to `.env` and fill in the database connection and the values shared with Spring Boot:
 
-Create a `.env` file in the project root and add the required variables for your local environment. The application reads this file globally via `ConfigModule.forRoot({ envFilePath: '.env' })`.
-
-Example structure:
-
-```env
+```dotenv
 PORT=3000
-DATABASE_TYPE=postgres
-DATABASE_HOST=your_database_host
-DATABASE_PORT=5432
-DATABASE_USERNAME=your_database_user
-DATABASE_PASSWORD=your_database_password
-DATABASE_NAME=your_database_name
+DB_HOST=localhost
+DB_PORT=15432
+DB_USER=your_database_user
+DB_PASSWORD=your_database_password
+DB_NAME=capstone2026
+JWT_SECRET=replace_with_a_long_random_signing_secret_of_32_or_more_characters
 JWT_EXPIRATION=3600s
-JWT_SECRET=your_secure_jwt_secret
+ADMIN_EMAIL_DOMAINS=admin.com,fmr.com
 ```
 
-Use your own secure values for the database connection and signing secret; do not commit real credentials to source control.
-
-## Install dependencies
+`JWT_SECRET` and `ADMIN_EMAIL_DOMAINS` must be identical in Group-12-Backend. The secret must be at least 32 characters, or the backend rejects every token.
 
 ```bash
 npm install
-```
-
-## Run the service
-
-Development mode:
-
-```bash
 npm run start:dev
 ```
 
-Production build:
+The service uses the existing tables with TypeORM `synchronize: false`. It does not create or migrate tables, and it does not seed accounts.
 
-```bash
-npm run build
-npm run start
-```
+## Client registration
 
-The app listens on the port from `PORT` (default `3000`).
-
-## API endpoints
-
-### `POST /auth/register`
-
-Creates a new client record after validating the payload and hashing the password.
-
-Request body:
+`POST /auth/register`
 
 ```json
 {
-  "email": "user@example.com",
-  "password": "ExamplePassword123!",
-  "firstName": "John",
+  "firstName": "Jane",
   "lastName": "Doe",
+  "email": "jane@example.com",
+  "password": "ClientPassword123!",
   "ssn": "123-45-6789",
-  "dateOfBirth": "2000-01-15",
-  "phoneNumber": "202-456-1111"
-}
-```
-
-Validation rules:
-- `email` must be a valid email
-- `password` must be at least 12 characters and include uppercase, lowercase, number, and special character
-- `ssn` must match `123-45-6789`
-- `dateOfBirth` must be a valid ISO date string
-- `phoneNumber` must be a valid US phone number
-
-Example success response:
-
-```json
-{
-  "clientId": "123",
-  "email": "user@example.com",
-  "firstName": "John",
-  "lastName": "Doe",
   "phoneNumber": "202-456-1111",
-  "dateOfBirth": "2000-01-15",
-  "accountBalance": "0",
-  "createdAt": "2026-10-05T00:00:00.000Z"
+  "dateOfBirth": "1990-05-15"
 }
 ```
 
-The response intentionally omits:
-- `passwordHash`
-- `ssn`
+Registration trims surrounding whitespace from the email. Emails on a domain listed in `ADMIN_EMAIL_DOMAINS` (`admin.com` and `fmr.com` by default) are rejected in any letter case, because login would look them up in the `admins` table. Admin accounts are created on Group-12-Backend.
 
-### `POST /auth/login`
+Passwords must contain 12 to 72 characters, including an uppercase letter, a lowercase letter, a number and a special character. First and last names must be nonempty strings of at most 100 characters. SSNs must use `123-45-6789` format, phone numbers must be valid US numbers of at most 12 characters (for example, `202-456-1111` or `+12024561111`), and dates of birth must be ISO 8601 dates.
 
-Authenticates a client by email and password, then issues a JWT.
+HTTP 201 returns the created client directly, with the same public fields as the client shown in the login response below. Password hashes and SSNs are excluded. Registration does not return a token; use `POST /auth/login` afterward.
 
-Request body:
+| Status | Meaning |
+| --- | --- |
+| 400 | Invalid body or an email using a reserved admin domain |
+| 409 | Email or SSN already registered |
+
+A rejected admin-domain email gets HTTP 400 with a message that names the domain, for example `Client registration does not accept emails ending in @admin.com; this domain is reserved for admins.`
+
+## Login
+
+`POST /auth/login`
 
 ```json
 {
-  "email": "user@example.com",
-  "password": "ExamplePassword123!"
+  "email": "super@admin.com",
+  "password": "<password>"
 }
 ```
 
-Example successful response:
+For an admin-domain email, HTTP 200 with the admin and a token that carries the role:
 
 ```json
 {
-  "accessToken": "eyJhbGciOiJIUzI1NiJ9..."
+  "accessToken": "<JWT>",
+  "admin": {
+    "adminId": "60",
+    "firstName": "Super",
+    "lastName": "Admin",
+    "email": "super@admin.com",
+    "role": "super_admin",
+    "createdAt": "2026-10-01T00:00:00.000Z"
+  }
 }
 ```
 
-## JWT behavior
+The JWT payload is `{ "sub": "<adminId>", "email": "...", "role": "super_admin" | "operations" | "finance", "iat": ..., "exp": ... }`. Spring Boot reads `role` to decide what the admin may do.
 
-The service currently issues JWTs using the `HS256` algorithm.
+For any other email, HTTP 200 with the client (no password hash, no SSN) and a token whose payload is `{ "sub": "<clientId>", "email": "...", "roles": ["CLIENT"], "iat": ..., "exp": ... }`:
 
-Token payload includes:
+```json
+{
+  "accessToken": "<JWT>",
+  "client": {
+    "clientId": "12",
+    "firstName": "Jane",
+    "lastName": "Doe",
+    "email": "jane@example.com",
+    "phoneNumber": "202-456-1111",
+    "dateOfBirth": "1990-05-15",
+    "accountBalance": "0",
+    "createdAt": "2026-10-01T00:00:00.000Z"
+  }
+}
+```
 
-- `sub` — client ID
-- `email` — client email
+| Status | Meaning |
+| --- | --- |
+| 400 | Invalid body: bad email, missing password, or unexpected fields |
+| 401 | Unknown email or wrong password |
 
-The JWT is signed using `JWT_SECRET` and expires according to `JWT_EXPIRATION`.
+Password hashes are never returned.
 
-Important: this implementation does not use RSA public/private keys or asymmetric JWT verification. It is a symmetric signing flow.
+## Creating accounts
 
-## Security notes
+- **Admins**: `POST /admins` on Group-12-Backend with a super admin's `accessToken` as `Authorization: Bearer <token>`. The backend hashes the password with bcrypt, stores the email lowercase and rejects emails outside `ADMIN_EMAIL_DOMAINS`. The new admin can log in here right away. See the backend README for the request body and error codes.
+- **Clients**: `POST /auth/register` on this service. The password is hashed with bcrypt before the client is saved. Reserved admin domains are rejected.
 
-- Passwords are hashed with `bcryptjs` before being stored.
-- Password hashes are never returned in API responses.
-- SSNs are unique and excluded from returned payloads.
-- The application does not expose a JWT validation or authorization guard in this service.
-- Authorization decisions should be enforced by the consuming application or downstream API layer.
-
-## Testing
+## Tests
 
 ```bash
 npm test
 ```
 
-The test suite includes an end-to-end auth flow covering:
-- client registration
-- login
-- JWT generation
-- validation of the signed token payload
+The spec starts a real Nest HTTP server with in-memory tables, so it needs no database. It covers login for all three roles and for clients, the role claim, domain routing, case-insensitive admin emails, both bcrypt prefixes, wrong passwords, unknown emails, body validation and client registration. Admin registration routes remain unavailable on this service.
 
-## Notes
+## Manual testing with Postman
 
-This project is a focused authentication microservice for the Group 12 platform. It handles:
-- registration
-- validation
-- password hashing
-- JWT issuance
+**Start both services.** This one listens on the `PORT` from `.env` (3000 by default); the backend listens on 8081.
 
-It does not currently implement application-level authorization checks or token validation logic beyond generating signed tokens.
+**Know a super admin password.** Only admins whose `password_hash` is a bcrypt hash can log in. To set a password on an existing super admin, generate a hash:
+
+```bash
+node -e "require('bcrypt').hash(process.argv[1], 12).then(console.log)" "YourPassword123!"
+```
+
+Then store it with your SQL client:
+
+```sql
+UPDATE admins SET password_hash = '<hash from the command>' WHERE email = 'super@admin.com';
+```
+
+**Use the collection.** Import [Group-12-Auth.postman_collection.json](postman/Group-12-Auth.postman_collection.json), open its Variables tab, and fill in `superAdminEmail`, `superAdminPassword`, `newAdminEmail` (admin domain), `newAdminPassword`, `newAdminRole`, `clientEmail` and `clientPassword`. Run the requests top to bottom. Request 1 saves the super admin token, request 2 registers an admin through the backend with it, and request 3 logs that admin in here. Request 7 registers a client here and request 8 logs it in, so `clientEmail` must be new and outside the admin domains, and the SSN in request 7's body must not be registered yet.
+
+| Step | Request | Body |
+| --- | --- | --- |
+| Super admin login | `POST {{baseUrl}}/auth/login` | `{ "email": "super@admin.com", "password": "YourPassword123!" }` |
+| Register an admin (backend) | `POST {{backendUrl}}/admins` + Bearer token | `{ "firstName": "Alex", "lastName": "Admin", "email": "alex@admin.com", "password": "StrongPassword123!", "role": "operations" }` |
+| New admin login | `POST {{baseUrl}}/auth/login` | `{ "email": "alex@admin.com", "password": "StrongPassword123!" }` |
+| Register a client | `POST {{baseUrl}}/auth/register` | Use the client registration body above |
+| Client login | `POST {{baseUrl}}/auth/login` | `{ "email": "jane@example.com", "password": "ClientPassword123!" }` |
+| Health | `GET {{baseUrl}}/users/health` | none |
+
+Expect 200 for logins and 201 for registrations. Client registration returns 400 for reserved admin domains or an invalid body, and 409 for a duplicate email or SSN. Admin registration on the backend returns 401 for a missing token, 403 when an operations or finance token is used, and 409 for an admin email that already exists. Login returns 401 for a wrong password.
