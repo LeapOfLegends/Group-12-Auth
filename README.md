@@ -6,7 +6,7 @@ Use Postman to call the endpoints. There is no Swagger setup in this repository.
 
 ## How login tells admins and clients apart
 
-The email domain picks the table. Domains listed in `ADMIN_EMAIL_DOMAINS` (default `admin.com,fmr.com`) are looked up in `admins`; every other domain is looked up in `clients`. There is no fall-through: an unknown email or a wrong password gets HTTP 401 `Invalid credentials`, and a client row with an admin-domain email can never log in.
+The email domain picks the table. The `admin.com` domain is looked up in `admins`; every other domain is looked up in `clients`. There is no fall-through: an unknown email or a wrong password gets HTTP 401 `Invalid credentials`, and a client row with an admin-domain email can never log in.
 
 Admin emails are matched trimmed and in lowercase because the backend stores them that way. Client emails are matched exactly as stored.
 
@@ -38,7 +38,7 @@ DB_PASSWORD=your_database_password
 DB_NAME=capstone2026
 JWT_SECRET=replace_with_a_long_random_signing_secret_of_32_or_more_characters
 JWT_EXPIRATION=3600s
-ADMIN_EMAIL_DOMAINS=admin.com,fmr.com
+ADMIN_EMAIL_DOMAINS=admin.com
 ```
 
 `JWT_SECRET` and `ADMIN_EMAIL_DOMAINS` must be identical in Group-12-Backend. The secret must be at least 32 characters, or the backend rejects every token.
@@ -66,7 +66,7 @@ The service uses the existing tables with TypeORM `synchronize: false`. It does 
 }
 ```
 
-Registration trims surrounding whitespace from the email. Emails on a domain listed in `ADMIN_EMAIL_DOMAINS` (`admin.com` and `fmr.com` by default) are rejected in any letter case, because login would look them up in the `admins` table. Admin accounts are created on Group-12-Backend.
+Registration trims surrounding whitespace from the email. Emails on the `admin.com` domain are rejected in any letter case, because login would look them up in the `admins` table. Admin accounts are created on Group-12-Backend.
 
 Passwords must contain 12 to 72 characters, including an uppercase letter, a lowercase letter, a number and a special character. First and last names must be nonempty strings of at most 100 characters. SSNs must use `123-45-6789` format, phone numbers must be valid US numbers of at most 12 characters (for example, `202-456-1111` or `+12024561111`), and dates of birth must be ISO 8601 dates.
 

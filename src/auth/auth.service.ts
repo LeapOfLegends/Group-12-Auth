@@ -18,7 +18,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
   ) {
-    this.adminEmailDomains = (this.configService.get<string>('ADMIN_EMAIL_DOMAINS') || 'admin.com,fmr.com')
+    this.adminEmailDomains = (this.configService.get<string>('ADMIN_EMAIL_DOMAINS') || 'admin.com')
       .split(',')
       .map((domain) => domain.trim().toLowerCase())
       .filter(Boolean);
