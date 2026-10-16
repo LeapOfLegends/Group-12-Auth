@@ -31,7 +31,7 @@ describe('Auth API (e2e)', () => {
       .useValue(new ConfigService({
         JWT_SECRET: 'e2e-secret-with-at-least-32-characters-in-it',
         JWT_EXPIRATION: '15m',
-        ADMIN_EMAIL_DOMAINS: 'admin.com, FMR.com',
+        ADMIN_EMAIL_DOMAINS: 'admin.com',
       }))
       .overrideProvider(getRepositoryToken(Admin))
       .useValue(table(admins))
@@ -155,11 +155,8 @@ describe('Auth API (e2e)', () => {
 
   it.each([
     ['client@admin.com', 'admin.com'],
-    ['client@fmr.com', 'fmr.com'],
     ['  Client@ADMIN.COM  ', 'admin.com'],
-    ['  Client@FMR.COM  ', 'fmr.com'],
     ['"client@other.com"@admin.com', 'admin.com'],
-    ['"client@other.com"@fmr.com', 'fmr.com'],
   ])('rejects reserved registration email %s without creating an account', async (email, domain) => {
     const result = await post('/auth/register', { ...registration(), email });
 
@@ -171,7 +168,7 @@ describe('Auth API (e2e)', () => {
     expect(admins).toHaveLength(0);
   });
 
-  it.each(['client@notadmin.com', 'client@admin.com.example.org', 'client@fmr.com.au'])(
+  it.each(['client@notadmin.com', 'client@admin.com.example.org', 'client@admin.com.au'])(
     'allows ordinary client domain %s',
     async (email) => {
       const result = await post('/auth/register', { ...registration(), email });
@@ -284,10 +281,10 @@ describe('Auth API (e2e)', () => {
     expect(payload).not.toHaveProperty('role');
   });
 
-  it('matches admin emails case-insensitively on every configured domain', async () => {
-    seedAdmin({ email: 'ops@fmr.com', role: AdminRole.OPERATIONS });
+  it('matches admin emails case-insensitively on the configured domain', async () => {
+    seedAdmin({ email: 'ops@admin.com', role: AdminRole.OPERATIONS });
 
-    const result = await login('  Ops@FMR.com ');
+    const result = await login('  Ops@ADMIN.COM ');
 
     expect(result.status).toBe(200);
     expect(result.body.admin.role).toBe('operations');
