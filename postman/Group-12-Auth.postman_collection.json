@@ -10,12 +10,14 @@
     { "key": "superAdminEmail", "value": "", "type": "string" },
     { "key": "superAdminPassword", "value": "", "type": "string" },
     { "key": "superAdminToken", "value": "", "type": "string" },
+    { "key": "superAdminRefreshToken", "value": "", "type": "string" },
     { "key": "newAdminEmail", "value": "", "type": "string" },
     { "key": "newAdminPassword", "value": "", "type": "string" },
     { "key": "newAdminRole", "value": "operations", "type": "string" },
     { "key": "newAdminToken", "value": "", "type": "string" },
     { "key": "clientEmail", "value": "", "type": "string" },
-    { "key": "clientPassword", "value": "", "type": "string" }
+    { "key": "clientPassword", "value": "", "type": "string" },
+    { "key": "clientRefreshToken", "value": "", "type": "string" }
   ],
   "item": [
     {
@@ -35,7 +37,10 @@
         "  pm.expect(body.admin.role).to.eql('super_admin');",
         "  pm.expect(body.admin).not.to.have.property('passwordHash');",
         "});",
-        "if (pm.response.code === 200) pm.collectionVariables.set('superAdminToken', body.accessToken);"
+        "if (pm.response.code === 200) {",
+        "  pm.collectionVariables.set('superAdminToken', body.accessToken);",
+        "  pm.collectionVariables.set('superAdminRefreshToken', body.refreshToken);",
+        "}"
       ] } }]
     },
     {
@@ -145,9 +150,28 @@
         "pm.test('Returns 200', () => pm.response.to.have.status(200));",
         "pm.test('JWT returned without secrets', () => {",
         "  pm.expect(body.accessToken).to.be.a('string');",
+        "  pm.expect(body.refreshToken).to.be.a('string');",
         "  pm.expect(body.client).not.to.have.property('passwordHash');",
         "  pm.expect(body.client).not.to.have.property('ssn');",
-        "});"
+        "});",
+        "if (pm.response.code === 200) pm.collectionVariables.set('clientRefreshToken', body.refreshToken);"
+      ] } }]
+    },
+    {
+      "name": "9. Refresh client access token",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/auth/refresh",
+        "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{clientRefreshToken}}\"\n}", "options": { "raw": { "language": "json" } } }
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('Returns a new access token', () => {",
+        "  pm.response.to.have.status(200);",
+        "  pm.expect(pm.response.json().accessToken).to.be.a('string');",
+        "  pm.expect(pm.response.json().refreshToken).to.be.a('string');",
+        "});",
+        "if (pm.response.code === 200) pm.collectionVariables.set('clientRefreshToken', pm.response.json().refreshToken);"
       ] } }]
     }
   ]

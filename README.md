@@ -38,6 +38,8 @@ DB_PASSWORD=your_database_password
 DB_NAME=capstone2026
 JWT_SECRET=replace_with_a_long_random_signing_secret_of_32_or_more_characters
 JWT_EXPIRATION=3600s
+REFRESH_TOKEN_EXPIRATION=2592000
+FRONTEND_ORIGIN=http://localhost:5173
 ADMIN_EMAIL_DOMAINS=admin.com
 ```
 
@@ -95,6 +97,7 @@ For an admin-domain email, HTTP 200 with the admin and a token that carries the 
 ```json
 {
   "accessToken": "<JWT>",
+  "refreshToken": "<opaque refresh token>",
   "admin": {
     "adminId": "60",
     "firstName": "Super",
@@ -113,6 +116,7 @@ For any other email, HTTP 200 with the client (no password hash, no SSN) and a t
 ```json
 {
   "accessToken": "<JWT>",
+  "refreshToken": "<opaque refresh token>",
   "client": {
     "clientId": "12",
     "firstName": "Jane",
@@ -132,6 +136,29 @@ For any other email, HTTP 200 with the client (no password hash, no SSN) and a t
 | 401 | Unknown email or wrong password |
 
 Password hashes are never returned.
+
+Refresh tokens are signed HS256 JWTs. The service stores only their SHA-256 hashes in the existing `refresh_tokens` table, with an expiry in `expires_at`. Each account has one active refresh token; a successful new login replaces the previous one. `REFRESH_TOKEN_EXPIRATION` controls lifetime in seconds and defaults to 30 days.
+
+Login and refresh also set the `refreshToken` cookie as HttpOnly, with its path limited to `/auth` and its lifetime matching the refresh token. In development the cookie uses `SameSite=Lax`; in production it uses `SameSite=None; Secure` for cross-site frontend deployments. `FRONTEND_ORIGIN` sets the single allowed browser origin for credentialed CORS, and defaults to `http://localhost:5173`. Browser requests must include credentials (`credentials: 'include'` or `withCredentials: true`) for the browser to save and send the cookie. The token remains in the JSON response too for existing clients and Postman.
+
+### Refresh access token
+
+`POST /auth/refresh`
+
+```json
+{ "refreshToken": "<refresh JWT>" }
+```
+
+HTTP 200 returns a new access token and a rotated refresh token:
+
+```json
+{
+  "accessToken": "<JWT>",
+  "refreshToken": "<new refresh JWT>"
+}
+```
+
+The token signature and JWT expiry must be valid, and its hash must match an unexpired row in `refresh_tokens`; otherwise the service returns 401. A successful refresh replaces the stored hash and expiry, so the submitted refresh token cannot be reused.
 
 ## Creating accounts
 

@@ -15,6 +15,10 @@ export class AdminsService {
     return this.adminsRepository.findOne({ where: { email } });
   }
 
+  findById(adminId: string): Promise<Admin | null> {
+    return this.adminsRepository.findOne({ where: { adminId } });
+  }
+
   toPublicAdmin(admin: Admin) {
     const { passwordHash, ...safeAdmin } = admin;
     return safeAdmin;
