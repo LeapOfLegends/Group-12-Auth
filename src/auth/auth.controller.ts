@@ -42,6 +42,19 @@ export class AuthController {
     return result;
   }
 
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  async logout(
+    @Body() dto: RefreshDto,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const refreshToken = this.readRefreshCookie(request) || dto?.refreshToken;
+    await this.authService.logout(refreshToken);
+    this.clearRefreshCookie(response);
+    return { message: 'Logged out' };
+  }
+
   private setRefreshCookie(response: Response, token: string) {
     const configuredSeconds = Number(this.configService.get<string>('REFRESH_TOKEN_EXPIRATION'));
     const maxAgeSeconds = Number.isSafeInteger(configuredSeconds) && configuredSeconds > 0
@@ -65,5 +78,15 @@ export class AuthController {
     const cookie = cookieHeader.split(';').map((part) => part.trim())
       .find((part) => part.startsWith('refreshToken='));
     return cookie ? cookie.slice('refreshToken='.length) : undefined;
+  }
+
+  private clearRefreshCookie(response: Response) {
+    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
+    response.clearCookie('refreshToken', {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
+      path: '/auth',
+    });
   }
 }
