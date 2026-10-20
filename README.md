@@ -27,7 +27,7 @@ Roles are `super_admin`, `operations` and `finance`. They live in the `roles` co
 
 ## Configuration and startup
 
-Copy [.env.example](.env.example) to `.env` and fill in the database connection and the values shared with Spring Boot:
+Create `.env` with the database connection and the values shared with Spring Boot:
 
 ```dotenv
 PORT=3000
@@ -49,6 +49,25 @@ npm run start:dev
 ```
 
 The service uses the existing tables with TypeORM `synchronize: false`. It does not create or migrate tables, and it does not seed accounts.
+
+## Docker image
+
+The Dockerfile packages the compiled `dist` directory. Jenkins installs dependencies, runs tests and builds the application once before creating the image on `main`. To do the same locally:
+
+```bash
+npm ci
+npm test -- --runInBand
+npm run build
+docker build -t group-12-auth:local .
+docker network inspect capstone-net >/dev/null 2>&1 || docker network create capstone-net
+docker run -d --name capstone-auth --network capstone-net --env-file .env -p 3000:3000 group-12-auth:local
+```
+
+Set the database and JWT values in `.env` before starting the container. `DB_HOST` and `DB_PORT` must address a database reachable from the container; `localhost` refers to the container itself. The database must already contain the shared application tables. Use the same `JWT_SECRET` of at least 32 characters and `ADMIN_EMAIL_DOMAINS` as the backend.
+
+The frontend proxy expects this container to be named `capstone-auth` on `capstone-net`. The Auth Jenkins pipeline creates the image; starting the Auth container is a separate step.
+
+Use a Unix Jenkins agent with Node.js 22 or a compatible newer release, npm and a working Docker daemon. Configure a Multibranch Pipeline so the `branch 'main'` condition receives the branch metadata it needs.
 
 ## Client registration
 
