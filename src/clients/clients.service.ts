@@ -19,6 +19,10 @@ export class ClientsService {
     return this.clientsRepository.findOne({ where: { email } });
   }
 
+  findById(clientId: string): Promise<Client | null> {
+    return this.clientsRepository.findOne({ where: { clientId } });
+  }
+
   findBySsn(ssn: string): Promise<Client | null> {
     return this.clientsRepository.findOne({ where: { ssn } });
   }

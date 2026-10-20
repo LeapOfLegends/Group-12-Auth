@@ -5,6 +5,7 @@ import { AuthModule } from './auth/auth.module';
 import { ClientsModule } from './clients/clients.module';
 import { Client } from './clients/entities/client.entity';
 import { Admin } from './admins/entities/admin.entity';
+import { RefreshToken } from './auth/entities/refresh-token.entity';
 
 @Module({
   imports: [
@@ -16,12 +17,12 @@ import { Admin } from './admins/entities/admin.entity';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         type: 'postgres' as const,
-        host: configService.getOrThrow<string>('DB_HOST'),
-        port: Number(configService.getOrThrow<string>('DB_PORT')),
-        username: configService.getOrThrow<string>('DB_USER'),
-        password: configService.getOrThrow<string>('DB_PASSWORD'),
-        database: configService.getOrThrow<string>('DB_NAME'),
-        entities: [Client, Admin],
+        host: configService.get<string>('DB_HOST') ?? configService.getOrThrow<string>('DATABASE_HOST'),
+        port: Number(configService.get<string>('DB_PORT') ?? configService.getOrThrow<string>('DATABASE_PORT')),
+        username: configService.get<string>('DB_USER') ?? configService.getOrThrow<string>('DATABASE_USERNAME'),
+        password: configService.get<string>('DB_PASSWORD') ?? configService.getOrThrow<string>('DATABASE_PASSWORD'),
+        database: configService.get<string>('DB_NAME') ?? configService.getOrThrow<string>('DATABASE_NAME'),
+        entities: [Client, Admin, RefreshToken],
         synchronize: false,
       }),
     }),
