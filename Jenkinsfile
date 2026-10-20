@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         DOCKER_IMAGE = 'group-12-auth'
-        IMAGE_VERSION = '1.0.0'
+        IMAGE_VERSION = '1.1.0'
     }
 
     stages {
