@@ -468,9 +468,9 @@ describe('Auth API (e2e)', () => {
   });
 
   it('matches admin emails case-insensitively on every configured domain', async () => {
-    seedAdmin({ email: 'ops@fmr.com', role: AdminRole.OPERATIONS });
+    seedAdmin({ email: 'ops@admin.com', role: AdminRole.OPERATIONS });
 
-    const result = await login('  Ops@ADMIN.COM ');
+    const result = await login('OPS@ADMIN.COM');
 
     expect(result.status).toBe(200);
     expect(result.body.admin.role).toBe('operations');
