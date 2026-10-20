@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Group-12 Auth (NestJS)",
-    "description": "Set baseUrl (this service), backendUrl (Group-12-Backend) and the existing super admin's email/password in the collection variables, then run top to bottom. Request 2 creates a real admin row through the backend, so use a unique admin-domain email. Request 7 creates a real client row, so use a unique client email and SSN. Passwords need 12+ characters with upper, lower, number and special character. Tokens are saved to collection variables; clear passwords and tokens before sharing.",
+    "description": "Set baseUrl (this service), backendUrl (Group-12-Backend) and the existing super admin's email/password in the collection variables, then run top to bottom. Request 2 creates a real admin row through the backend, so use a unique admin-domain email. Request 7 creates a real client row, so use a unique client email and SSN. Passwords need 12+ characters with upper, lower, number and special character. Tokens are saved to collection variables; clear passwords and tokens before sharing. Request 10 logs the client out by revoking its refresh token.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -172,6 +172,21 @@
         "  pm.expect(pm.response.json().refreshToken).to.be.a('string');",
         "});",
         "if (pm.response.code === 200) pm.collectionVariables.set('clientRefreshToken', pm.response.json().refreshToken);"
+      ] } }]
+    },
+    {
+      "name": "10. Logout client",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/auth/logout",
+        "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{clientRefreshToken}}\"\n}", "options": { "raw": { "language": "json" } } },
+        "description": "Revokes the active refresh token and clears the refresh cookie. Access JWTs remain valid until expiry."
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('Logout succeeds', () => pm.response.to.have.status(200));",
+        "pm.test('Logout confirms completion', () => pm.expect(pm.response.json().message).to.eql('Logged out'));",
+        "if (pm.response.code === 200) pm.collectionVariables.set('clientRefreshToken', '');"
       ] } }]
     }
   ]

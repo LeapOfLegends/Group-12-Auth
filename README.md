@@ -14,7 +14,7 @@ Admin emails are matched trimmed and in lowercase because the backend stores the
 
 ```text
 src/
-  auth/        POST /auth/login, /auth/register   AuthController, AuthService, LoginDto, RegisterDto
+  auth/        POST /auth/login, /auth/register, /auth/refresh, /auth/logout   AuthController, AuthService, DTOs
   admins/      admins table access       Admin entity, AdminRole enum, AdminsService
   clients/     clients table access      Client entity, ClientsService, GET /users/health
 test/
@@ -178,6 +178,18 @@ HTTP 200 returns a new access token and a rotated refresh token:
 ```
 
 The token signature and JWT expiry must be valid, and its hash must match an unexpired row in `refresh_tokens`; otherwise the service returns 401. A successful refresh replaces the stored hash and expiry, so the submitted refresh token cannot be reused.
+
+### Log out
+
+`POST /auth/logout`
+
+The endpoint revokes the supplied refresh token by deleting its matching SHA-256 hash from `refresh_tokens`, then clears the `refreshToken` HttpOnly cookie using the same `/auth` path and cookie security settings as login. It accepts the token from the cookie or, for non-browser clients such as Postman, an optional body:
+
+```json
+{ "refreshToken": "<refresh JWT>" }
+```
+
+HTTP 200 returns `{ "message": "Logged out" }`. Logout succeeds if the token is missing, unknown, expired, or already revoked, so the operation is safe to repeat. A previously issued access JWT remains valid until its normal expiry; logout revokes the ability to refresh it. Browser requests must include credentials so the cookie can be sent and cleared.
 
 ## Creating accounts
 

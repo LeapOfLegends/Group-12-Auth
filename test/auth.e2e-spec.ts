@@ -72,8 +72,10 @@ describe('Auth API (e2e)', () => {
           Object.assign(token, values);
           return { affected: 1 };
         },
-        delete: async ({ accountType, accountId }: Partial<RefreshToken>) => {
-          const remaining = refreshTokens.filter((row) => row.accountType !== accountType || row.accountId !== accountId);
+        delete: async ({ accountType, accountId, tokenHash }: Partial<RefreshToken>) => {
+          const remaining = refreshTokens.filter((row) => tokenHash
+            ? row.tokenHash !== tokenHash
+            : row.accountType !== accountType || row.accountId !== accountId);
           const affected = refreshTokens.length - remaining.length;
           refreshTokens.splice(0, refreshTokens.length, ...remaining);
           return { affected };
@@ -374,6 +376,35 @@ describe('Auth API (e2e)', () => {
     const replay = await post('/auth/refresh', { refreshToken: signedIn.body.refreshToken });
 
     expect(replay.status).toBe(401);
+  });
+
+  it('logs out by revoking the refresh token and clearing the matching cookie', async () => {
+    seedClient();
+    const signedIn = await login('jane@example.com');
+
+    const result = await post('/auth/logout', { refreshToken: signedIn.body.refreshToken });
+
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({ message: 'Logged out' });
+    expect(refreshTokens).toHaveLength(0);
+    expect(result.headers.get('set-cookie')).toContain('Path=/auth');
+    expect(result.headers.get('set-cookie')).toContain('Expires=Thu, 01 Jan 1970');
+    expect((await post('/auth/refresh', { refreshToken: signedIn.body.refreshToken })).status).toBe(401);
+  });
+
+  it('logs out using the cookie and treats missing, unknown, and already revoked tokens as success', async () => {
+    seedClient();
+    const signedIn = await login('jane@example.com');
+
+    const fromCookie = await post('/auth/logout', undefined, { Cookie: `refreshToken=${signedIn.body.refreshToken}` });
+    const withoutToken = await post('/auth/logout');
+    const again = await post('/auth/logout', { refreshToken: signedIn.body.refreshToken });
+
+    expect(fromCookie.status).toBe(200);
+    expect(withoutToken.status).toBe(200);
+    expect(again.status).toBe(200);
+    expect(again.headers.get('set-cookie')).toContain('Path=/auth');
+    expect(refreshTokens).toHaveLength(0);
   });
 
   it('replaces the account refresh token on a new login', async () => {

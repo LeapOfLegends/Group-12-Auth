@@ -142,6 +142,12 @@ export class AuthService {
     };
   }
 
+  async logout(refreshToken?: string) {
+    if (refreshToken) {
+      await this.refreshTokens.delete({ tokenHash: this.hashRefreshToken(refreshToken) });
+    }
+  }
+
   private async issueRefreshToken(accountType: 'client' | 'admin', accountId: string) {
     const { token, expiresAt } = await this.createRefreshToken(accountType, accountId);
     const tokenHash = this.hashRefreshToken(token);
