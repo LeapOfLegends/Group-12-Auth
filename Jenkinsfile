@@ -1,9 +1,14 @@
 pipeline {
     agent any
 
+    triggers {
+        pollSCM('H/5 * * * *')
+    }
+
     environment {
         DOCKER_IMAGE = 'group-12-auth'
         IMAGE_VERSION = '1.1.0'
+        CONTAINER_NAME = 'capstone-auth'
     }
 
     stages {
@@ -46,12 +51,13 @@ pipeline {
                 branch 'main'
             }
             steps {
-                sh '''
-                    docker network inspect capstone-net >/dev/null 2>&1 || docker network create capstone-net
-                    docker stop capstone-auth || true
-                    docker rm capstone-auth || true
-                    docker run -d --name capstone-auth --network capstone-net --env-file /home/ec2-user/Group-12-Auth/.env -p 3000:3000 ${DOCKER_IMAGE}:${IMAGE_VERSION}
-                '''
+                withCredentials([file(credentialsId: 'group-12-auth-env', variable: 'AUTH_ENV_FILE')]) {
+                    sh '''
+                        docker network inspect capstone-net >/dev/null 2>&1 || docker network create capstone-net
+                        docker rm -f group-12-auth ${CONTAINER_NAME} 2>/dev/null || true
+                        docker run -d --name ${CONTAINER_NAME} --network capstone-net --env-file "$AUTH_ENV_FILE" --restart unless-stopped -p 3000:3000 ${DOCKER_IMAGE}:${BUILD_NUMBER}
+                    '''
+                }
             }
         }
     }
