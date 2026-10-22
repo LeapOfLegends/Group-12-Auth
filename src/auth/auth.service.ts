@@ -10,6 +10,7 @@ import { ClientsService } from '../clients/clients.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshToken } from './entities/refresh-token.entity';
+import { resolveSrv } from 'dns/promises';
 
 // Clients register here; admin accounts are created by the Spring Boot backend.
 @Injectable()
@@ -79,7 +80,7 @@ export class AuthService {
 
     // Spring Boot reads "role" from this token to decide what the admin may do.
     return {
-      accessToken: await this.sign({ sub: admin.adminId, email: admin.email, role: admin.role }),
+      accessToken: await this.sign({ sub: admin.adminId, email: admin.email, roles: admin.role.toUpperCase() }),
       refreshToken: await this.issueRefreshToken('admin', admin.adminId),
       admin: this.adminsService.toPublicAdmin(admin),
     };
