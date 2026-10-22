@@ -287,7 +287,7 @@ describe('Auth API (e2e)', () => {
   });
 
   it.each([AdminRole.SUPER_ADMIN, AdminRole.OPERATIONS, AdminRole.FINANCE])(
-    'logs in a %s admin and returns a JWT carrying the role',
+    'logs in a %s admin and returns a JWT carrying uppercase roles',
     async (role) => {
       seedAdmin({ role });
 
@@ -298,7 +298,7 @@ describe('Auth API (e2e)', () => {
       expect(result.body.admin).not.toHaveProperty('passwordHash');
       expect(result.body).not.toHaveProperty('client');
       expect(await jwt.verifyAsync(result.body.accessToken, { algorithms: ['HS256'] }))
-        .toMatchObject({ sub: '1', email: 'super@admin.com', role });
+        .toMatchObject({ sub: '1', email: 'super@admin.com', roles: role.toUpperCase() });
     },
   );
 
